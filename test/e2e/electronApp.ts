@@ -24,6 +24,7 @@ export interface ElectronApp {
   text(): Promise<string>
   clickButton(label: string): Promise<void>
   typeCommand(text: string): Promise<void>
+  /** Latest real answer: bubble text and the raw agent intent (`data-intent` of its .intent-tag). */
   lastAssistant(): Promise<{ text: string; intent: string }>
   assistantCount(): Promise<number>
   screenshot(path: string): Promise<void>
@@ -179,7 +180,7 @@ export async function launchApp(o: LaunchOptions): Promise<ElectronApp> {
     lastAssistant: () =>
       evaluate(`(() => {
         const m = [...document.querySelectorAll('.chat-message.assistant')].filter((x) => !x.querySelector('.message-bubble')?.innerText.startsWith('Đang phân tích')).at(-1)
-        return { text: m?.querySelector('.message-bubble')?.innerText ?? '', intent: m?.querySelector('.intent-tag')?.innerText ?? '' }
+        return { text: m?.querySelector('.message-bubble')?.innerText ?? '', intent: m?.querySelector('.intent-tag')?.dataset.intent ?? '' }
       })()`),
     assistantCount: () =>
       evaluate<number>(
