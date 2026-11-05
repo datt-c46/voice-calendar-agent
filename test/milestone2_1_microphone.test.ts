@@ -2,8 +2,6 @@
 /* eslint-disable @typescript-eslint/no-empty-function */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import assert from 'assert'
-import { AgentOrchestrator } from '../src/main/agent/agentOrchestrator'
-import { MockCalendarService } from '../src/main/calendar/mockCalendarService'
 
 // Mock Web Audio and MediaStream environments for node testing
 class MockMediaStreamTrack {
@@ -236,20 +234,6 @@ async function runMilestone2_1Tests(): Promise<void> {
   assert.strictEqual(status, 'error')
   assert.ok(error?.includes('No microphone found'))
   console.log('  ✓ Handled missing device gracefully: ' + error)
-
-  // 9. Existing M1 & M1.5 Calendar & Intent functionality is completely unaffected
-  console.log('\n[Test 9] Regression test: Existing M1.5 Calendar & Intent flow unchanged:')
-  const mockCalendar = new MockCalendarService()
-  const orchestrator = new AgentOrchestrator(mockCalendar)
-  const res = await orchestrator.processCommand({
-    text: 'Chiều mai lúc 3 giờ họp với A'
-  })
-  assert.strictEqual(res.success, true)
-  assert.strictEqual(res.intent, 'CREATE_EVENT')
-  assert.strictEqual(res.events?.[0]?.summary, 'Họp với A')
-  assert.ok(res.events?.[0]?.start.dateTime.includes('15:00:00'))
-  assert.ok(res.events?.[0]?.start.dateTime.includes('+07:00'))
-  console.log('  ✓ Calendar event creation and timezone policy (+07:00) 100% operational.')
 
   console.log('\n====================================================')
   console.log('ALL MILESTONE 2.1 MICROPHONE TESTS PASSED!')

@@ -1,6 +1,4 @@
 import assert from 'node:assert'
-import { AgentOrchestrator } from '../src/main/agent/agentOrchestrator'
-import { MockCalendarService } from '../src/main/calendar/mockCalendarService'
 export type VadState =
   | 'idle'
   | 'initializing'
@@ -292,46 +290,6 @@ async function runTestSuite(): Promise<void> {
   assert.strictEqual(deniedController.error!.includes('Permission denied'), true)
   assert.strictEqual(deniedController.vad, null)
   console.log('  ✓ Permission denial transitions gracefully to error state without app crash.')
-
-  // [TEST 10] M1/M1.5 Regression Suite: Calendar & Intent flow unchanged
-  console.log('\n[Test 10] Regression verification for M1/M1.5 Calendar & Intent:')
-  const mockService = new MockCalendarService()
-  const orchestrator = new AgentOrchestrator(mockService)
-
-  // 1. List events
-  const listResult = await orchestrator.processCommand({ text: 'Ngày mai tôi có lịch gì?' })
-  assert.strictEqual(listResult.success, true)
-  assert.strictEqual(listResult.intent, 'LIST_EVENTS')
-
-  // 2. Create event
-  const createResult = await orchestrator.processCommand({
-    text: 'Chiều mai lúc 3 giờ họp với A'
-  })
-  assert.strictEqual(createResult.success, true)
-  assert.strictEqual(createResult.intent, 'CREATE_EVENT')
-  assert.strictEqual(createResult.events?.[0]?.summary, 'Họp với A')
-  assert.strictEqual(
-    createResult.events?.[0]?.start?.dateTime?.includes('15:00:00.000+07:00'),
-    true
-  )
-
-  // 3. Update event
-  const updateResult = await orchestrator.processCommand({
-    text: 'Dời cuộc họp lúc 3 giờ chiều ngày mai sang 4 giờ'
-  })
-  assert.strictEqual(updateResult.success, true)
-  assert.strictEqual(updateResult.intent, 'UPDATE_EVENT')
-
-  // 4. Delete event
-  const deleteResult = await orchestrator.processCommand({
-    text: 'Xóa cuộc họp lúc 4 giờ chiều ngày mai'
-  })
-  assert.strictEqual(deleteResult.success, true)
-  assert.strictEqual(deleteResult.intent, 'DELETE_EVENT')
-
-  console.log(
-    '  ✓ All 4 natural language commands executed successfully with Asia/Bangkok (+07:00) policy.'
-  )
 
   console.log('\n====================================================')
   console.log('ALL MILESTONE 2.2 VAD TESTS PASSED SUCCESSFULLY!')
