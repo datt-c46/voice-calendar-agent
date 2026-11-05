@@ -9,6 +9,9 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  # Piper models are served by voice-backend now; keep the files in the repo (copy them to PIPER_MODELS_DIR)
+  - '!resources/models/**'
+  - '!test/**'
 asarUnpack:
   - resources/**
 win:
