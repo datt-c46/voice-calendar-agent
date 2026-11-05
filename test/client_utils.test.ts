@@ -6,9 +6,11 @@ import { parseEnvFile } from '../src/main/envConfig'
 import { chunkTextForTts } from '../src/renderer/src/services/tts/piperProvider'
 import {
   formatEventDate,
+  formatEventEnd,
   formatEventTime,
   lastAllDayDate
 } from '../src/renderer/src/utils/eventFormat'
+import { intentLabel } from '../src/renderer/src/utils/intentLabel'
 import { vadAssetBaseUrl } from '../src/renderer/src/utils/vadAssets'
 
 describe('resolveBackendConfig', () => {
@@ -138,6 +140,48 @@ describe('event formatting', () => {
     assert.equal(lastAllDayDate('2026-11-06', '2026-11-07'), null) // single day
     assert.equal(lastAllDayDate('2026-11-06', '2026-11-09'), '2026-11-08')
     assert.equal(lastAllDayDate('2026-12-31', '2027-01-02'), '2027-01-01')
+  })
+
+  it('shows only the end time when the event ends on the day it starts', () => {
+    const tz = 'Asia/Bangkok'
+    assert.equal(
+      formatEventEnd('2026-11-06T10:00:00+07:00', tz, '2026-11-06T09:00:00+07:00', tz),
+      '10:00'
+    )
+    // Ends the next day (in the shown zone): keep the date.
+    assert.equal(
+      formatEventEnd('2026-11-07T01:00:00+07:00', tz, '2026-11-06T23:00:00+07:00', tz),
+      '01:00 • 07/11/2026'
+    )
+    // Same instant pair, but the shown zone puts the start on the previous day.
+    assert.equal(
+      formatEventEnd(
+        '2026-11-06T10:00:00+07:00',
+        tz,
+        '2026-11-06T09:00:00+07:00',
+        'America/New_York'
+      ),
+      '10:00 • 06/11/2026'
+    )
+    assert.equal(formatEventEnd('2026-11-06T10:00:00+07:00', tz), '10:00 • 06/11/2026') // no start
+    assert.equal(formatEventEnd('garbage', tz, '2026-11-06T09:00:00+07:00', tz), 'garbage')
+    assert.equal(formatEventEnd(undefined, tz, '2026-11-06T09:00:00+07:00', tz), '')
+  })
+})
+
+describe('intentLabel', () => {
+  it('names the known agent intents in Vietnamese', () => {
+    assert.equal(intentLabel('CREATE_EVENT'), 'Tạo lịch')
+    assert.equal(intentLabel('LIST_EVENTS'), 'Xem lịch')
+    assert.equal(intentLabel('DELETE_EVENT'), 'Xóa lịch')
+    assert.equal(intentLabel('CONFIRM_ACTION'), 'Đã xác nhận')
+    assert.equal(intentLabel('ERROR'), 'Lỗi')
+  })
+
+  it('turns an unknown intent into readable words without prototype lookups', () => {
+    assert.equal(intentLabel('SMALL_TALK'), 'Small talk')
+    assert.equal(intentLabel('constructor'), 'Constructor')
+    assert.equal(intentLabel(''), '')
   })
 })
 

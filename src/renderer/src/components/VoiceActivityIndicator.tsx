@@ -6,157 +6,74 @@ interface VoiceActivityIndicatorProps {
   isSpeechDetected: boolean
   speechCount?: number
   lastSpeechInfo?: LastSpeechInfo | null
+  /** Signed out: the mic button is disabled, so say why instead of "ready". */
+  signedOut?: boolean
+}
+
+/** Colour of the status dot; each tone carries a meaning (see main.css `.tone-*`). */
+type Tone = 'idle' | 'busy' | 'active' | 'live' | 'ok' | 'error'
+
+interface VadView {
+  tone: Tone
+  mainText: string
+  subText: string
+}
+
+const VAD_VIEWS: Record<VadState, VadView> = {
+  idle: {
+    tone: 'idle',
+    mainText: 'Micro sẵn sàng',
+    subText: 'Bấm “Bắt đầu nghe” để ra lệnh bằng giọng nói'
+  },
+  initializing: { tone: 'busy', mainText: 'Đang khởi động…', subText: 'Đang tải mô hình VAD' },
+  listening: { tone: 'active', mainText: 'Đang nghe', subText: 'Chưa phát hiện giọng nói' },
+  speaking: { tone: 'live', mainText: 'Đang thu giọng nói', subText: 'Phát hiện giọng nói' },
+  'speech-ended': { tone: 'ok', mainText: 'Đã thu xong', subText: 'Sẵn sàng cho lệnh tiếp theo' },
+  transcribing: {
+    tone: 'busy',
+    mainText: 'Đang nhận dạng…',
+    subText: 'Chuyển giọng nói thành văn bản'
+  },
+  processing: { tone: 'busy', mainText: 'Đang xử lý…', subText: 'Đang thực hiện thao tác lịch' },
+  'speaking-assistant': {
+    tone: 'active',
+    mainText: 'Trợ lý đang đọc',
+    subText: 'Micro tạm dừng để tránh thu lại tiếng loa'
+  },
+  success: { tone: 'ok', mainText: 'Hoàn tất', subText: 'Đã thực hiện thao tác lịch' },
+  error: { tone: 'error', mainText: 'Lỗi giọng nói', subText: 'Không thể hoàn tất thao tác' }
+}
+
+const SIGNED_OUT_VIEW: VadView = {
+  tone: 'idle',
+  mainText: 'Chưa đăng nhập',
+  subText: 'Đăng nhập để ra lệnh bằng giọng nói'
 }
 
 export const VoiceActivityIndicator: React.FC<VoiceActivityIndicatorProps> = ({
   vadState,
   isSpeechDetected,
   speechCount = 0,
-  lastSpeechInfo = null
+  lastSpeechInfo = null,
+  signedOut = false
 }) => {
-  const getVadConfig = (): {
-    badge: string
-    badgeColor: string
-    mainText: string
-    subText: string
-    icon: string
-    pulsing?: boolean
-  } => {
-    switch (vadState) {
-      case 'idle':
-        return {
-          badge: 'Ready',
-          badgeColor: '#9ca3af',
-          mainText: 'Microphone Ready',
-          subText: 'Ready to listen',
-          icon: '🎙'
-        }
-      case 'initializing':
-        return {
-          badge: 'Initializing',
-          badgeColor: '#f59e0b',
-          mainText: 'Initializing VAD...',
-          subText: 'Loading Silero ONNX model...',
-          icon: '⏳'
-        }
-      case 'listening':
-        return {
-          badge: 'Listening',
-          badgeColor: '#06b6d4',
-          mainText: 'Listening',
-          subText: 'No speech detected',
-          icon: '🎙'
-        }
-      case 'speaking':
-        return {
-          badge: 'Speaking',
-          badgeColor: '#f43f5e',
-          mainText: 'Speaking...',
-          subText: 'Voice activity detected',
-          icon: '🔴',
-          pulsing: true
-        }
-      case 'transcribing':
-        return {
-          badge: 'Transcribing',
-          badgeColor: '#8b5cf6',
-          mainText: 'Transcribing audio...',
-          subText: 'Converting speech to text via STT...',
-          icon: '⏳',
-          pulsing: true
-        }
-      case 'processing':
-        return {
-          badge: 'Processing',
-          badgeColor: '#3b82f6',
-          mainText: 'Processing with Agent...',
-          subText: 'Executing calendar operation...',
-          icon: '⚡',
-          pulsing: true
-        }
-      case 'speaking-assistant':
-        return {
-          badge: 'Speaking (Assistant)',
-          badgeColor: '#a855f7',
-          mainText: 'Assistant Speaking...',
-          subText: 'Đang đọc phản hồi (Mic tạm dừng tránh phản xạ)...',
-          icon: '🔊',
-          pulsing: true
-        }
-      case 'success':
-        return {
-          badge: 'Success',
-          badgeColor: '#10b981',
-          mainText: 'Execution complete',
-          subText: 'Calendar operation completed',
-          icon: '✓'
-        }
-      case 'speech-ended':
-        return {
-          badge: 'Detected',
-          badgeColor: '#10b981',
-          mainText: 'Speech detected',
-          subText: 'Ready for next input',
-          icon: '✓'
-        }
-      case 'error':
-        return {
-          badge: 'Error',
-          badgeColor: '#f43f5e',
-          mainText: 'Voice/Agent error',
-          subText: 'Operation could not be completed',
-          icon: '⚠'
-        }
-      default:
-        return {
-          badge: 'Ready',
-          badgeColor: '#9ca3af',
-          mainText: 'Microphone Ready',
-          subText: 'Ready to listen',
-          icon: '🎙'
-        }
-    }
-  }
-
-  const { badge, badgeColor, mainText, subText, icon, pulsing } = getVadConfig()
+  const view =
+    signedOut && vadState === 'idle' ? SIGNED_OUT_VIEW : (VAD_VIEWS[vadState] ?? VAD_VIEWS.idle)
+  const tone: Tone = isSpeechDetected ? 'live' : view.tone
 
   return (
-    <div className="vad-indicator-box">
+    <div className={`vad-status tone-${tone}`} role="status">
       <div className="vad-status-row">
-        <div className="vad-main-indicator">
-          <span
-            className={`vad-indicator-dot ${pulsing || isSpeechDetected ? 'pulsing' : ''}`}
-            style={{ backgroundColor: badgeColor }}
-          />
-          <span className="vad-icon">{icon}</span>
-          <span className="vad-main-text" style={{ color: pulsing ? badgeColor : undefined }}>
-            {mainText}
-          </span>
-          <span
-            className="vad-badge"
-            style={{
-              borderColor: badgeColor,
-              color: badgeColor,
-              backgroundColor: `${badgeColor}15`
-            }}
-          >
-            {badge}
-          </span>
-        </div>
-
+        <span className="status-dot" aria-hidden="true"></span>
+        <span className="vad-main-text">{view.mainText}</span>
         {speechCount > 0 && (
-          <div className="vad-count-badge" title="Number of detected speech segments">
-            Segments: <strong>{speechCount}</strong>
-            {lastSpeechInfo && (
-              <span className="vad-last-duration"> ({lastSpeechInfo.durationMs}ms)</span>
-            )}
-          </div>
+          <span className="vad-count" title="Số đoạn giọng nói đã phát hiện">
+            {speechCount} đoạn
+            {lastSpeechInfo && ` · ${lastSpeechInfo.durationMs} ms`}
+          </span>
         )}
       </div>
-
-      <div className="vad-subtext-row">
-        <span className="vad-subtext">{subText}</span>
-      </div>
+      <div className="vad-subtext">{view.subText}</div>
     </div>
   )
 }

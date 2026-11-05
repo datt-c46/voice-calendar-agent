@@ -29,16 +29,17 @@ export const CommandInput: React.FC<CommandInputProps> = ({
   }
 
   return (
-    <footer className="input-footer">
+    <div className="input-footer">
       <form onSubmit={handleSubmit}>
         <div className="input-wrapper">
           <input
             type="text"
             className="command-input"
+            aria-label="Câu lệnh"
             placeholder={
               disabled
-                ? 'Hãy đăng nhập để bắt đầu...'
-                : 'Nhập lệnh tự nhiên (ví dụ: Chiều mai lúc 3 giờ họp với A)...'
+                ? 'Hãy đăng nhập để bắt đầu…'
+                : 'Nhập lệnh, ví dụ: Chiều mai lúc 3 giờ họp với A'
             }
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -48,17 +49,19 @@ export const CommandInput: React.FC<CommandInputProps> = ({
           />
           <button
             type="submit"
-            className="send-btn"
+            className="btn btn-primary send-btn"
             disabled={!text.trim() || isProcessing || disabled}
           >
-            {isProcessing ? 'Đang gửi...' : 'Gửi ↵'}
+            {isProcessing ? 'Đang gửi…' : 'Gửi'}
           </button>
         </div>
       </form>
       <div className="input-hints">
         <span>Gõ lệnh tự nhiên bằng tiếng Việt hoặc tiếng Anh</span>
-        <span>Phím tắt: [Enter] để gửi</span>
+        <span>
+          <kbd>Enter</kbd> để gửi
+        </span>
       </div>
-    </footer>
+    </div>
   )
 }

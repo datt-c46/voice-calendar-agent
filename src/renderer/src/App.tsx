@@ -44,7 +44,7 @@ export function App(): React.JSX.Element {
     {
       id: 'welcome-msg',
       sender: 'assistant',
-      text: 'Xin chào! Tôi là Trợ lý Lịch trình (Voice Calendar Agent).\n\nỨng dụng chạy trên voice-backend: đăng nhập bằng Google để dùng Google Calendar của bạn (tài khoản dev dùng lịch local trên server). Sau đó bạn có thể nói hoặc nhập các câu lệnh bên dưới:',
+      text: 'Xin chào! Tôi là Trợ lý Lịch trình (Voice Calendar Agent).\n\nỨng dụng chạy trên voice-backend: đăng nhập bằng Google để dùng Google Calendar của bạn (tài khoản dev dùng lịch local trên server). Sau đó bạn có thể nói, nhập lệnh hoặc chọn một câu lệnh mẫu.',
       timestamp: formatCurrentTime()
     }
   ])
@@ -116,12 +116,12 @@ export function App(): React.JSX.Element {
       } else if (res.isAuthenticated) {
         addAssistantMessage(
           res.calendarProvider === 'google'
-            ? `✅ Đã đăng nhập ${res.userEmail ?? ''}. Các lệnh sẽ thao tác trực tiếp trên Google Calendar.`
-            : `✅ Đã đăng nhập ${res.userEmail ?? ''}. Đang dùng lịch local trên server.`
+            ? `Đã đăng nhập ${res.userEmail ?? ''}. Các lệnh sẽ thao tác trực tiếp trên Google Calendar.`
+            : `Đã đăng nhập ${res.userEmail ?? ''}. Đang dùng lịch local trên server.`
         )
       }
     } catch (err) {
-      addAssistantMessage(`⚠️ Lỗi đăng nhập: ${parseIpcError(err).message}`)
+      addAssistantMessage(`Lỗi đăng nhập: ${parseIpcError(err).message}`)
     } finally {
       setSigningIn(false)
     }
@@ -133,7 +133,7 @@ export function App(): React.JSX.Element {
       applyAuth(await window.api.signOut())
       addAssistantMessage('Đã đăng xuất khỏi voice-backend.')
     } catch (err) {
-      addAssistantMessage(`⚠️ Đăng xuất thất bại: ${parseIpcError(err).message}`)
+      addAssistantMessage(`Đăng xuất thất bại: ${parseIpcError(err).message}`)
     }
   }
 
@@ -142,7 +142,7 @@ export function App(): React.JSX.Element {
     applyAuth(res)
     addAssistantMessage(
       res.error
-        ? `⚠️ Không ngắt được Google: ${res.errorMessage}`
+        ? `Không ngắt được Google: ${res.errorMessage}`
         : 'Đã thu hồi quyền Google. Lịch chuyển sang lịch local trên server.'
     )
   }
@@ -265,12 +265,13 @@ export function App(): React.JSX.Element {
         onRejectAction={(id) => void handlePendingAction(id, false)}
       />
 
+      {/* DOM order = Tab order = visual order at every width (see the grid in main.css). */}
+      <MicrophoneControl disabled={!signedIn} onVoiceCommand={handleVoiceCommand} />
+
       <CommandSuggestions
         disabled={isProcessing || !signedIn}
         onSelectSuggestion={(text) => void handleSendCommand(text)}
       />
-
-      <MicrophoneControl disabled={!signedIn} onVoiceCommand={handleVoiceCommand} />
 
       <CommandInput
         disabled={!signedIn}

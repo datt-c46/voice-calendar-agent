@@ -1,1034 +1,1312 @@
-@import './base.css';
+/*
+ * Voice Calendar Agent — "paper and ink" design system.
+ * Calm, classic UI: warm paper, ink text, hairline rules, one muted ink-blue accent.
+ * Layout: a CSS grid on .app-container places the header, chat and the bottom dock
+ * (voice panel, sample commands, input — DOM and Tab order); from 1100 px the voice panel
+ * and the sample commands move to a right-hand column. The chat list scrolls; the voice
+ * panel (and, on wide windows, the side panels) scroll only when they run out of room.
+ */
 
+/* ------------------------------------------------------------------ tokens */
 :root {
-  --bg-primary: #0f1117;
-  --bg-secondary: #181b24;
-  --bg-surface: #212533;
-  --bg-surface-hover: #292e3f;
-  --accent-blue: #4f80ff;
-  --accent-cyan: #00d2ff;
-  --accent-purple: #9d5cff;
-  --accent-green: #10b981;
-  --accent-amber: #f59e0b;
-  --accent-rose: #f43f5e;
-  --text-main: #f3f4f6;
-  --text-secondary: #9ca3af;
-  --text-muted: #6b7280;
-  --border-color: rgba(255, 255, 255, 0.08);
-  --border-highlight: rgba(79, 128, 255, 0.3);
-  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.25);
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 18px;
+  color-scheme: light;
+
+  /* Paper & ink */
+  --paper: #f6f4ef;
+  --surface: #fffefb;
+  --surface-sunken: #efece5;
+  --rule: #dfdbd1;
+  --rule-strong: #c4bfb2;
+  --ink: #1d1d1b;
+  --ink-soft: #3f3e3a;
+  --muted: #69665e;
+  /* Smallest text (timestamps, labels, hints, placeholder): >= 4.5:1 on paper, surface and sunken. */
+  --faint: #6f6b62;
+  /* Non-text marks only (idle dot, scrollbar hover): >= 3:1 on surface. */
+  --faint-mark: #8d897f;
+  /* Form-field boundary: >= 3:1 against both the field and the page. */
+  --rule-input: #8a867c;
+
+  /* Accent: deep ink blue, used sparingly */
+  --accent: #1f3a5f;
+  --accent-hover: #162b47;
+  --accent-fill: #1f3a5f;
+  --accent-fill-hover: #162b47;
+  --on-accent: #fbfaf7;
+  --accent-tint: #e7ecf2;
+  --accent-tint-rule: #cdd6e2;
+  --focus: #1f3a5f;
+
+  /* Status (desaturated, only where meaningful) */
+  --ok: #4d6b3c;
+  --warn: #8a6516;
+  --warn-tint: #f5eedd;
+  --warn-rule: #e3d4ad;
+  --err: #9b3a2c;
+  --err-tint: #f7ebe7;
+  --err-rule: #e6c6be;
+
+  --shadow-hairline: 0 1px 0 rgba(29, 29, 27, 0.04);
+
+  /* Type */
+  --font-serif: 'Noto Serif', Georgia, 'DejaVu Serif', 'Liberation Serif', 'Times New Roman', serif;
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', system-ui, 'DejaVu Sans',
+    'Liberation Sans', Arial, sans-serif;
+  --font-mono:
+    ui-monospace, 'SFMono-Regular', Menlo, Consolas, 'DejaVu Sans Mono', 'Liberation Mono',
+    monospace;
+  --fs-xs: 11px;
+  --fs-sm: 12.5px;
+  --fs-base: 14px;
+  --fs-md: 15px;
+  --fs-lg: 18px;
+  --fs-xl: 21px;
+
+  /* Space & shape */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --gutter: var(--sp-5);
+  --radius-sm: 3px;
+  --radius: 4px;
+  --radius-lg: 6px;
+  --control-h: 34px;
+  --ease: 120ms ease;
 }
 
-* {
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --paper: #1b1a18;
+    --surface: #24231f;
+    --surface-sunken: #161513;
+    --rule: #37352f;
+    --rule-strong: #4b4840;
+    --ink: #e9e5db;
+    --ink-soft: #d0cbbf;
+    --muted: #a19c90;
+    --faint: #938e82;
+    --faint-mark: #7d786d;
+    --rule-input: #75716a;
+
+    --accent: #a3bcdd;
+    --accent-hover: #bfd1e8;
+    --accent-fill: #34537c;
+    --accent-fill-hover: #3d5e8a;
+    --on-accent: #f4f2ec;
+    --accent-tint: #252e3a;
+    --accent-tint-rule: #34404f;
+    --focus: #a3bcdd;
+
+    --ok: #9db687;
+    --warn: #d4b06a;
+    --warn-tint: #2e281b;
+    --warn-rule: #4d4129;
+    --err: #df9282;
+    --err-tint: #33221e;
+    --err-rule: #573830;
+
+    --shadow-hairline: 0 1px 0 rgba(0, 0, 0, 0.25);
+  }
+}
+
+/* -------------------------------------------------------------------- base */
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
+html,
 body {
   margin: 0;
-  padding: 0;
-  background-color: var(--bg-primary);
-  color: var(--text-main);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  height: 100vh;
-  width: 100vw;
+  height: 100%;
+}
+
+body {
   overflow: hidden;
-  user-select: text;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 #root {
-  height: 100vh;
-  width: 100vw;
-  display: flex;
-  flex-direction: column;
+  height: 100%;
 }
 
-/* App Container */
-.app-container {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  max-width: 980px;
-  margin: 0 auto;
-  width: 100%;
-  background: var(--bg-primary);
-  border-left: 1px solid var(--border-color);
-  border-right: 1px solid var(--border-color);
-}
-
-/* Header */
-.app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 24px;
-  background: rgba(24, 27, 36, 0.85);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border-color);
-  z-index: 10;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.brand-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-  box-shadow: 0 0 16px rgba(79, 128, 255, 0.4);
-}
-
-.brand-text h1 {
+h1,
+h2,
+p,
+blockquote {
   margin: 0;
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.3px;
-  background: linear-gradient(90deg, #ffffff, #c7d2fe);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
 }
 
-.brand-subtitle {
-  font-size: 11px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
+button,
+input {
+  font: inherit;
+  color: inherit;
 }
 
-.header-status {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+button {
+  cursor: pointer;
 }
 
-.badge {
+button:disabled {
+  cursor: not-allowed;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Quiet scrollbars: a thin rounded thumb, no arrow buttons. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 5px;
+  background: var(--rule-strong) content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--faint-mark);
+}
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  padding: 0 4px;
+  border: 1px solid var(--rule);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+/* ---------------------------------------------------------------- controls */
+.btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
+  height: var(--control-h);
+  padding: 0 14px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-base);
   font-weight: 500;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
+  white-space: nowrap;
+  transition:
+    background-color var(--ease),
+    border-color var(--ease),
+    color var(--ease);
 }
 
-.badge-dot {
+.btn:hover:not(:disabled) {
+  border-color: var(--ink-soft);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+}
+
+.btn-primary {
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: var(--on-accent);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-fill-hover);
+  border-color: var(--accent-fill-hover);
+}
+
+/* A control that cannot be used yet carries no accent: a quiet sunken button instead of a faded slab. */
+.btn-primary:disabled,
+.pending-btn.confirm:disabled {
+  opacity: 1;
+  background: var(--surface-sunken);
+  border-color: var(--rule);
+  color: var(--muted);
+}
+
+.btn-sm {
+  height: 28px;
+  padding: 0 10px;
+  font-size: var(--fs-sm);
+}
+
+/* Text button: a classic underlined link. Kept at least 24 px tall to stay tappable. */
+.link-btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+
+.link-btn:hover {
+  color: var(--accent-hover);
+  text-decoration-thickness: 2px;
+}
+
+.status-dot {
+  flex: none;
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background-color: var(--accent-green);
-  box-shadow: 0 0 8px var(--accent-green);
+  background: var(--faint-mark);
 }
 
-.badge.mock {
-  border-color: rgba(16, 185, 129, 0.3);
-  color: #a7f3d0;
+/* Read by screen readers, not shown. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
-.badge.google {
-  border-color: rgba(79, 128, 255, 0.4);
-  color: #c7d2fe;
+.notice {
+  padding: 6px 10px;
+  border: 1px solid;
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
 }
 
-.badge-dot.google {
-  background-color: var(--accent-blue);
-  box-shadow: 0 0 8px var(--accent-blue);
+.notice-error {
+  color: var(--err);
+  background: var(--err-tint);
+  border-color: var(--err-rule);
 }
 
-.badge.authenticating {
-  border-color: rgba(245, 158, 11, 0.4);
-  color: #fde68a;
+.notice-warn {
+  color: var(--warn);
+  background: var(--warn-tint);
+  border-color: var(--warn-rule);
 }
 
-.badge-dot.pulse {
-  background-color: var(--accent-amber);
-  box-shadow: 0 0 8px var(--accent-amber);
-  animation: pulseDot 1s infinite alternate;
+.panel-title {
+  font-family: var(--font-serif);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--ink);
 }
 
-.badge.not-configured {
-  border-color: var(--border-color);
-  color: var(--text-muted);
+/* ------------------------------------------------------------------ layout */
+/*
+ * Below 1100 px: one column, the dock under the chat in DOM (= Tab) order: voice panel, sample commands, input.
+ * The chat row keeps at least 35% of the window; the voice row (minmax(0, auto)) only gets what is left, and the
+ * voice panel scrolls inside itself when its transcription details do not fit, so it can never squeeze the chat.
+ */
+.app-container {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(35%, 1fr) minmax(0, auto) auto auto;
+  grid-template-areas:
+    'header'
+    'chat'
+    'voice'
+    'suggest'
+    'input';
+  height: 100%;
+  width: 100%;
+  max-width: calc(860px + 2 * var(--gutter));
+  margin: 0 auto;
+  padding: 0 var(--gutter);
 }
 
-.badge.auth-error {
-  border-color: rgba(244, 63, 94, 0.4);
-  color: #fecdd3;
+.app-header {
+  grid-area: header;
+}
+.chat-feed {
+  grid-area: chat;
+}
+.suggestions-container {
+  grid-area: suggest;
+}
+.mic-control-card {
+  grid-area: voice;
+}
+.input-footer {
+  grid-area: input;
 }
 
-.auth-connect-btn {
+/* ------------------------------------------------------------------ header */
+.app-header {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2) var(--sp-5);
+  padding: var(--sp-4) 0 var(--sp-3);
+  border-bottom: 1px solid var(--rule);
+}
+
+.brand {
+  min-width: 0;
+}
+
+.brand-title {
+  font-family: var(--font-serif);
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+}
+
+.brand-subtitle {
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Status line: items separated by hairlines. Each separator sits in the gap left of its item; the clip hides the
+ * one in front of whichever item starts a line, so a wrapped line never begins with a dangling rule (the clip is
+ * widened by 6 px so focus rings stay visible). Lines are left-aligned for the same reason.
+ */
+.header-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--sp-1) var(--sp-6);
+  min-width: 0;
+  clip-path: inset(-6px);
+  font-size: var(--fs-sm);
+  color: var(--ink-soft);
+}
+
+.status-item {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 12px;
-  border-radius: 999px;
-  font-size: 12px;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.status-item::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: calc(-1 * var(--sp-4));
+  border-left: 1px solid var(--rule);
+}
+
+.status-item.is-ok .status-dot {
+  background: var(--ok);
+}
+.status-item.is-pending .status-dot {
+  background: var(--warn);
+}
+.status-item.is-error {
+  color: var(--err);
+}
+.status-item.is-error .status-dot {
+  background: var(--err);
+}
+.status-item.is-pending {
+  color: var(--muted);
+}
+
+.status-text,
+.user-email {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-email {
+  color: var(--ink);
+}
+
+.status-label {
+  font-size: var(--fs-xs);
   font-weight: 600;
-  background: linear-gradient(135deg, var(--accent-blue), #3b66d6);
-  border: none;
-  color: #ffffff;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(79, 128, 255, 0.3);
+  letter-spacing: 0.08em;
+  color: var(--muted);
 }
 
-.auth-connect-btn:hover {
-  background: linear-gradient(135deg, #3b66d6, #2d52b8);
-  transform: translateY(-1px);
+.status-item.is-warn .status-label {
+  color: var(--warn);
 }
 
-.auth-link-btn {
-  background: transparent;
-  border: none;
-  color: #93c5fd;
-  cursor: pointer;
-  font-size: 11px;
-  padding: 0 2px;
-  margin-left: 4px;
-  text-decoration: underline;
+.timezone {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
-.auth-link-btn:hover {
-  color: #ffffff;
+.sign-in-actions {
+  gap: var(--sp-3);
 }
 
-@keyframes pulseDot {
-  from {
-    opacity: 0.4;
-    transform: scale(0.85);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1.15);
-  }
-}
-
-/* Chat Feed */
+/* -------------------------------------------------------------------- chat */
+/*
+ * The scroller (<main>) pushes its scrollbar into the gutter (negative right margin = scrollbar + padding), so the
+ * bubbles' right edge lines up with the dock below. scrollbar-gutter keeps that true when nothing scrolls yet.
+ */
 .chat-feed {
-  flex: 1;
+  min-height: 0;
+  margin-right: -14px;
+  padding-right: var(--sp-1);
   overflow-y: auto;
-  padding: 24px;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  /* ChatFeed keeps the newest message in view itself; browser scroll anchoring would fight it on resize. */
+  overflow-anchor: none;
+}
+
+.chat-log {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--sp-4);
+  padding: var(--sp-5) 0 var(--sp-4);
 }
 
 .chat-message {
+  position: relative;
   display: flex;
   flex-direction: column;
-  max-width: 82%;
-  animation: fadeIn 0.25s ease-out forwards;
-}
-
-.chat-message.user {
-  align-self: flex-end;
+  max-width: min(78%, 680px);
+  min-width: 0;
 }
 
 .chat-message.assistant {
   align-self: flex-start;
+  align-items: flex-start;
+}
+
+.chat-message.user {
+  align-self: flex-end;
+  align-items: flex-end;
 }
 
 .message-bubble {
-  padding: 14px 18px;
-  border-radius: var(--radius-md);
-  font-size: 14px;
-  line-height: 1.55;
-  box-shadow: var(--shadow-card);
+  max-width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-hairline);
+  font-size: var(--fs-base);
+  line-height: 1.6;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .chat-message.user .message-bubble {
-  background: linear-gradient(135deg, var(--accent-blue), #3b66d6);
-  color: #ffffff;
-  border-bottom-right-radius: 2px;
+  background: var(--accent-tint);
+  border-color: var(--accent-tint-rule);
+  box-shadow: none;
 }
 
-.chat-message.assistant .message-bubble {
-  background: var(--bg-surface);
-  color: var(--text-main);
-  border: 1px solid var(--border-color);
-  border-bottom-left-radius: 2px;
+.message-bubble.is-pending {
+  color: var(--muted);
+  font-style: italic;
+  background: transparent;
+  border-style: dashed;
+  box-shadow: none;
 }
 
 .message-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-  font-size: 11px;
-  color: var(--text-muted);
+  gap: 6px;
+  margin-top: 4px;
+  padding: 0 2px;
+  font-size: var(--fs-xs);
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
 }
 
-.chat-message.user .message-meta {
-  justify-content: flex-end;
-}
-
+/* What the agent did, as plain metadata next to the time ('Tạo lịch · 12:15'); the raw intent is in data-intent. */
 .intent-tag {
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--accent-cyan);
+  color: var(--muted);
 }
 
-/* Event Card inside assistant message */
+/* Event cards inside an assistant message */
 .event-card-container {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  white-space: normal;
 }
 
 .event-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px 14px;
-  background: rgba(15, 17, 23, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: var(--radius-sm);
-  transition: border-color 0.2s;
-}
-
-.event-card:hover {
-  border-color: var(--border-highlight);
-}
-
-.event-card-icon {
-  font-size: 18px;
-  margin-top: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--paper);
 }
 
 .event-card-content {
-  flex: 1;
+  min-width: 0;
 }
 
 .event-card-title {
-  font-size: 13.5px;
   font-weight: 600;
-  color: #ffffff;
-  margin-bottom: 4px;
+  color: var(--ink);
+  line-height: 1.4;
 }
 
 .event-card-time {
-  font-size: 12px;
-  color: #93c5fd;
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  margin-top: 2px;
+  font-size: var(--fs-sm);
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
 }
 
 .event-card-desc {
-  font-size: 11.5px;
-  color: var(--text-muted);
-  margin-top: 3px;
+  margin-top: 2px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
 }
 
-/* Suggestion Chips */
-.suggestions-container {
-  padding: 10px 24px;
-  background: var(--bg-primary);
-  border-top: 1px solid var(--border-color);
-  overflow-x: auto;
+.event-card-label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+}
+
+.pending-actions {
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  white-space: normal;
+}
+
+.pending-btn {
+  display: inline-flex;
   align-items: center;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  transition:
+    background-color var(--ease),
+    border-color var(--ease);
+}
+
+.pending-btn.confirm {
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: var(--on-accent);
+}
+
+.pending-btn.reject:hover:not(:disabled) {
+  border-color: var(--ink-soft);
+}
+
+.pending-btn.confirm:hover:not(:disabled) {
+  background: var(--accent-fill-hover);
+  border-color: var(--accent-fill-hover);
+}
+
+.pending-btn.reject:disabled {
+  opacity: 0.5;
+}
+
+/* ------------------------------------------------------------- suggestions */
+.suggestions-container {
+  min-width: 0;
+  padding-top: var(--sp-3);
+}
+
+.suggestions-container .panel-title {
+  display: none;
+}
+
+/*
+ * Single row that scrolls sideways without a visible scrollbar. The edge that hides more chips fades out
+ * (has-more-start / has-more-end are set by CommandSuggestions, which also maps a vertical wheel to sideways
+ * scrolling), and scroll-padding keeps a focused chip clear of the fade.
+ */
+.suggestion-list {
+  display: flex;
+  gap: var(--sp-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  scroll-padding-inline: 48px;
+}
+
+.suggestion-list::-webkit-scrollbar {
+  display: none;
+}
+
+.suggestion-list.has-more-end {
+  mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent);
+}
+
+.suggestion-list.has-more-start {
+  mask-image: linear-gradient(to left, #000 calc(100% - 56px), transparent);
+}
+
+.suggestion-list.has-more-start.has-more-end {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 56px,
+    #000 calc(100% - 56px),
+    transparent
+  );
 }
 
 .suggestion-chip {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  font-size: 12px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.2s ease;
-}
-
-.suggestion-chip:hover {
-  background: var(--bg-surface-hover);
-  color: #ffffff;
-  border-color: var(--border-highlight);
-  transform: translateY(-1px);
-}
-
-/* Input Footer */
-.input-footer {
-  padding: 16px 24px 24px 24px;
-  background: var(--bg-secondary);
-  border-top: 1px solid var(--border-color);
-}
-
-.input-wrapper {
-  display: flex;
-  align-items: center;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  padding: 6px 8px 6px 16px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  transition:
-    border-color 0.2s,
-    box-shadow 0.2s;
-}
-
-.input-wrapper:focus-within {
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 0 3px rgba(79, 128, 255, 0.2);
-}
-
-.command-input {
-  flex: 1;
+  flex: none;
+  max-width: 340px;
+  padding: 4px 10px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-sm);
   background: transparent;
-  border: none;
-  outline: none;
-  color: var(--text-main);
-  font-size: 14px;
-  padding: 8px 0;
-}
-
-.command-input::placeholder {
-  color: var(--text-muted);
-}
-
-.send-btn {
-  background: var(--accent-blue);
-  color: #ffffff;
-  border: none;
-  border-radius: var(--radius-sm);
-  padding: 8px 16px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  transition:
-    background-color 0.2s,
-    transform 0.1s;
-}
-
-.send-btn:hover:not(:disabled) {
-  background: #3b66d6;
-}
-
-.send-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.input-hints {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 8px;
-  font-size: 11px;
-  color: var(--text-muted);
-  padding: 0 4px;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Microphone Control Card */
-.mic-control-card {
-  margin: 0 24px 12px 24px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  padding: 12px 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  transition: border-color 0.2s;
-}
-
-.mic-control-card:hover {
-  border-color: rgba(255, 255, 255, 0.14);
-}
-
-.mic-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
-.mic-status-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.mic-indicator-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  transition: background-color 0.2s;
-}
-
-.mic-status-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-main);
-}
-
-.mic-status-badge {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 2px 6px;
-  border: 1px solid;
-  border-radius: 999px;
-  font-weight: 700;
-}
-
-.mic-action-container {
-  display: flex;
-  align-items: center;
-}
-
-.mic-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  border: none;
-  transition: all 0.2s ease;
-}
-
-.mic-btn-start {
-  background: linear-gradient(135deg, var(--accent-blue), #3b66d6);
-  color: #ffffff;
-  box-shadow: 0 2px 8px rgba(79, 128, 255, 0.3);
-}
-
-.mic-btn-start:hover:not(:disabled) {
-  background: linear-gradient(135deg, #5b8aff, #4670e0);
-  transform: translateY(-1px);
-}
-
-.mic-btn-start:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.mic-btn-stop {
-  background: linear-gradient(135deg, var(--accent-rose), #e11d48);
-  color: #ffffff;
-  box-shadow: 0 2px 8px rgba(244, 63, 94, 0.3);
-  animation: pulse-glow 1.5s infinite;
-}
-
-.mic-btn-stop:hover {
-  background: linear-gradient(135deg, #fb7185, #f43f5e);
-  transform: translateY(-1px);
-}
-
-@keyframes pulse-glow {
-  0%,
-  100% {
-    box-shadow: 0 0 6px rgba(244, 63, 94, 0.4);
-  }
-  50% {
-    box-shadow: 0 0 14px rgba(244, 63, 94, 0.8);
-  }
-}
-
-.mic-btn-icon {
-  font-size: 14px;
-}
-
-/* Audio Level Meter */
-.mic-meter-container {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.mic-meter-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.mic-text-meter {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  color: var(--accent-cyan);
-  font-size: 11px;
-  letter-spacing: 1px;
-}
-
-.mic-meter-pct {
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  width: 32px;
-  text-align: right;
-  color: var(--text-secondary);
-}
-
-.mic-meter-bar-track {
-  height: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 999px;
+  color: var(--ink-soft);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  text-align: left;
+  white-space: nowrap;
   overflow: hidden;
-}
-
-.mic-meter-bar-fill {
-  height: 100%;
-  width: 0%;
-  border-radius: 999px;
+  text-overflow: ellipsis;
   transition:
-    width 0.08s ease-out,
-    background-color 0.15s ease;
+    border-color var(--ease),
+    color var(--ease),
+    background-color var(--ease);
 }
 
-.mic-error-banner {
-  margin-top: 8px;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  background: rgba(244, 63, 94, 0.12);
-  border: 1px solid rgba(244, 63, 94, 0.3);
-  color: #fca5a5;
-  font-size: 11px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.suggestion-chip:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--surface);
 }
 
-/* VAD Indicator Box */
-.vad-indicator-box {
+.suggestion-chip:disabled {
+  opacity: 0.55;
+}
+
+/* Inset ring: never cut off by the scrolling row or the scrolling side panel. */
+.suggestion-chip:focus-visible {
+  outline-offset: -2px;
+}
+
+/* Medium windows with room to spare: wrap, so every sample is visible at once. */
+@media (min-width: 640px) and (max-width: 1099px) and (min-height: 700px) {
+  .suggestion-list {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .suggestion-chip {
+    max-width: 100%;
+  }
+}
+
+/* ------------------------------------------------------------- voice panel */
+/* Scrolls inside itself when the layout gives it less than its content (see .app-container). */
+.mic-control-card {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-2);
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-hairline);
+}
+
+.mic-control-card > .panel-title {
+  display: none;
+}
+
+.voice-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+
+.vad-status {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .vad-status-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-
-.vad-main-indicator {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.vad-indicator-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  transition: all 0.2s ease;
-}
-
-.vad-indicator-dot.pulsing {
-  animation: vad-pulse 1s infinite alternate;
-  box-shadow: 0 0 8px #f43f5e;
-}
-
-@keyframes vad-pulse {
-  0% {
-    transform: scale(0.9);
-    opacity: 0.7;
-  }
-  100% {
-    transform: scale(1.3);
-    opacity: 1;
-  }
-}
-
-.vad-icon {
-  font-size: 13px;
+  gap: var(--sp-2);
+  min-width: 0;
 }
 
 .vad-main-text {
-  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 600;
-  color: var(--text-main);
-  transition: color 0.15s;
+  color: var(--ink);
 }
 
-.vad-badge {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 2px 7px;
-  border: 1px solid;
-  border-radius: 999px;
-  font-weight: 700;
-}
-
-.vad-count-badge {
-  font-size: 11px;
-  color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.04);
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.vad-last-duration {
-  color: var(--accent-cyan);
+.vad-count {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--faint);
   font-variant-numeric: tabular-nums;
-}
-
-.vad-subtext-row {
-  font-size: 11px;
-  color: var(--text-muted);
-  padding-left: 16px;
 }
 
 .vad-subtext {
-  letter-spacing: 0.2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-left: 15px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
 }
 
-.mic-speaking-tag {
-  color: #f43f5e;
-  font-weight: 700;
-  font-size: 11px;
-  animation: fadeIn 0.15s ease;
+.tone-busy .status-dot {
+  background: var(--warn);
+}
+.tone-active .status-dot {
+  background: var(--accent);
+}
+.tone-live .status-dot {
+  background: var(--err);
+}
+.tone-ok .status-dot {
+  background: var(--ok);
+}
+.tone-error .status-dot {
+  background: var(--err);
+}
+.tone-error .vad-main-text {
+  color: var(--err);
 }
 
-/* Transcription Display Card (Milestone 2.3) */
+.mic-level {
+  flex: 0 0 140px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--rule);
+}
+
+/* The level is always 0 while the mic is off: keep the space, show nothing. */
+.mic-level:not(.is-active) {
+  visibility: hidden;
+}
+
+.mic-level-fill {
+  display: block;
+  height: 100%;
+  background: var(--ink-soft);
+  transition: width 80ms linear;
+}
+
+.mic-level.is-loud .mic-level-fill {
+  background: var(--err);
+}
+
+.mic-btn {
+  flex: none;
+}
+
+.mic-btn-icon {
+  flex: none;
+}
+
+.mic-btn-stop {
+  color: var(--err);
+  border-color: var(--err-rule);
+}
+
+.mic-btn-stop:hover:not(:disabled) {
+  border-color: var(--err);
+}
+
+.icon-stop {
+  width: 9px;
+  height: 9px;
+  border-radius: 1px;
+  background: currentColor;
+}
+
+/* Transcription (secondary, under the voice bar) */
 .transcription-card {
-  margin-top: 10px;
-  padding: 10px 12px;
-  background: rgba(139, 92, 246, 0.06);
-  border: 1px solid rgba(139, 92, 246, 0.2);
-  border-radius: var(--radius-sm);
   display: flex;
   flex-direction: column;
   gap: 6px;
-  animation: fadeIn 0.2s ease-out;
+  min-width: 0;
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--rule);
+  font-size: var(--fs-sm);
 }
 
-.transcription-header {
+.transcription-progress {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.transcription-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: var(--sp-2);
+  min-width: 0;
+  min-height: 28px;
 }
 
-.transcription-title-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-
-.transcription-icon {
-  font-size: 13px;
-}
-
-.transcription-title {
+.transcription-label {
+  flex: none;
+  min-width: 52px;
+  font-size: var(--fs-xs);
   font-weight: 600;
-}
-
-.transcription-lang-badge {
-  font-size: 9px;
-  font-weight: 700;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: rgba(139, 92, 246, 0.2);
-  color: #c4b5fd;
-  letter-spacing: 0.5px;
-}
-
-.transcription-latency {
-  font-size: 10px;
-  color: var(--accent-cyan);
-  font-variant-numeric: tabular-nums;
-  background: rgba(6, 182, 212, 0.1);
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
-.transcription-clear-btn {
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  font-size: 11px;
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
-  transition: all 0.15s;
-}
-
-.transcription-clear-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-main);
-}
-
-.transcription-content-area {
-  padding: 4px 0;
-}
-
-.transcription-loading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: #c4b5fd;
-  padding: 4px 0;
-}
-
-.transcription-spinner {
-  animation: spin 2s infinite linear;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  letter-spacing: 0.04em;
+  color: var(--faint);
 }
 
 .transcription-quote {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 500;
-  color: #f3f4f6;
-  line-height: 1.4;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-serif);
   font-style: italic;
-  padding-left: 8px;
-  border-left: 2px solid #8b5cf6;
+  color: var(--ink);
+  quotes: '“' '”';
 }
 
-.transcription-footer-note {
-  font-size: 10px;
-  color: var(--text-muted);
-  font-style: italic;
-  margin-top: 2px;
+.transcription-lang {
+  flex: none;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.06em;
+  color: var(--faint);
 }
 
-/* Milestone 2.4: Voice -> Agent Result Styles */
-.transcription-quote-box {
-  margin-bottom: 8px;
-}
-
-.transcription-quote-label {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-muted);
-  margin-bottom: 3px;
-}
-
-.transcription-processing {
-  display: flex;
+.transcription-tools {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: #38bdf8;
-  padding: 6px 8px;
-  background: rgba(56, 189, 248, 0.08);
-  border-radius: var(--radius-sm);
-  border: 1px dashed rgba(56, 189, 248, 0.3);
-  margin-top: 6px;
+  gap: var(--sp-3);
+  flex: none;
+  margin-left: auto;
 }
 
-.transcription-agent-box {
-  margin-top: 8px;
-  padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--radius-sm);
-  animation: fadeIn 0.2s ease-out;
+.transcription-speaking {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.transcription-agent-header {
+.transcription-details {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 4px;
-}
-
-.transcription-agent-label {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-main);
-  display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 4px;
+  max-height: 7.5em;
+  overflow-y: auto;
+  padding: 6px 10px;
+  border-left: 2px solid var(--rule);
+  color: var(--muted);
 }
 
-.transcription-intent-badge {
-  font-size: 9px;
-  font-weight: 700;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  letter-spacing: 0.5px;
+.transcription-intent {
+  flex: none;
+  color: var(--muted);
+}
+
+.transcription-latency {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
 .transcription-agent-text {
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--text-secondary);
+  color: var(--ink-soft);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
-.transcription-agent-text.success {
-  color: #f3f4f6;
-}
-
-.transcription-agent-text.error {
-  color: #f87171;
-}
-
-/* Milestone 3.1: Text-to-Speech (TTS) UI Styles */
-.transcription-agent-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.transcription-speaking-tag {
-  font-size: 10px;
-  font-weight: 700;
-  color: #c084fc;
-  background: rgba(192, 132, 252, 0.15);
-  border: 1px solid rgba(192, 132, 252, 0.3);
-  padding: 1px 6px;
-  border-radius: 4px;
-  animation: pulse-glow 1.2s infinite alternate;
-}
-
-@keyframes pulse-glow {
-  0% {
-    opacity: 0.7;
-    box-shadow: 0 0 2px rgba(192, 132, 252, 0.2);
-  }
-  100% {
-    opacity: 1;
-    box-shadow: 0 0 8px rgba(192, 132, 252, 0.5);
+/* In the single-column layout the reply is right above in the chat: the details only add the timings. */
+@media (max-width: 1099px) {
+  .transcription-latency + .transcription-agent-text {
+    display: none;
   }
 }
 
-.transcription-tts-actions {
+/* ------------------------------------------------------------------- input */
+.input-footer {
+  min-width: 0;
+  padding: var(--sp-3) 0 var(--sp-3);
+}
+
+.input-wrapper {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 
-.tts-btn {
-  font-size: 11px;
-  font-weight: 600;
-  border-radius: 4px;
-  padding: 2px 8px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  border: 1px solid transparent;
+.command-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--rule-input);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-md);
+  transition: border-color var(--ease);
 }
 
-.tts-btn-stop {
-  background: rgba(239, 68, 68, 0.15);
-  color: #fca5a5;
-  border-color: rgba(239, 68, 68, 0.3);
+.command-input::placeholder {
+  color: var(--faint);
 }
 
-.tts-btn-stop:hover {
-  background: rgba(239, 68, 68, 0.25);
-  color: #ffffff;
+.command-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
-.tts-btn-replay {
-  background: rgba(139, 92, 246, 0.15);
-  color: #c4b5fd;
-  border-color: rgba(139, 92, 246, 0.3);
-}
-
-.tts-btn-replay:hover {
-  background: rgba(139, 92, 246, 0.25);
-  color: #ffffff;
-}
-
-.transcription-tts-warning {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: #fbbf24;
-  background: rgba(245, 158, 11, 0.1);
-  border: 1px dashed rgba(245, 158, 11, 0.3);
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  margin-bottom: 6px;
-}
-
-.tts-warning-icon {
-  font-size: 12px;
-}
-
-/* Confirm / cancel a pending delete or update (voice-backend pendingAction) */
-.pending-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.pending-btn {
-  padding: 5px 14px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  border: 1px solid var(--border-color);
-  background: var(--bg-surface);
-  color: var(--text-main);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.pending-btn.confirm {
-  border-color: rgba(16, 185, 129, 0.5);
-  color: #a7f3d0;
-}
-
-.pending-btn.reject {
-  border-color: rgba(244, 63, 94, 0.5);
-  color: #fecdd3;
-}
-
-.pending-btn:hover:not(:disabled) {
-  background: var(--bg-surface-hover);
-  transform: translateY(-1px);
-}
-
-.pending-btn:disabled {
-  opacity: 0.5;
+.command-input:disabled {
+  border-color: var(--rule-strong);
+  background: var(--surface-sunken);
   cursor: not-allowed;
+}
+
+.send-btn {
+  height: 40px;
+  min-width: 72px;
+}
+
+.input-hints {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: 6px;
+  padding: 0 2px;
+  font-size: var(--fs-xs);
+  color: var(--faint);
+}
+
+/* ------------------------------------------------- wide: right-hand column */
+@media (min-width: 1100px) {
+  .app-container {
+    max-width: 1240px;
+    padding: 0 var(--sp-6);
+    grid-template-columns: minmax(0, 1fr) 340px;
+    /* The voice panel takes what it needs up to 60% of the height; the samples keep the rest. */
+    grid-template-rows: auto fit-content(60%) minmax(0, 1fr) auto;
+    grid-template-areas:
+      'header  header'
+      'chat    voice'
+      'chat    suggest'
+      'input   suggest';
+    column-gap: var(--sp-6);
+  }
+
+  .chat-message {
+    max-width: min(80%, 680px);
+  }
+
+  .mic-control-card,
+  .suggestions-container {
+    overflow-y: auto;
+  }
+
+  .mic-control-card {
+    gap: var(--sp-3);
+    margin-top: var(--sp-5);
+    padding: var(--sp-4);
+  }
+
+  .mic-control-card > .panel-title {
+    display: block;
+  }
+
+  .voice-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--sp-3);
+  }
+
+  .mic-level {
+    flex: none;
+    width: 100%;
+  }
+
+  .mic-btn {
+    width: 100%;
+  }
+
+  .transcription-card {
+    padding-top: var(--sp-3);
+  }
+
+  .transcription-label {
+    min-width: 0;
+  }
+
+  /* The side column scrolls as a whole; no inner cap needed. */
+  .transcription-details {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .transcription-row {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  .transcription-quote {
+    flex-basis: 100%;
+    order: 5;
+    white-space: normal;
+    font-size: var(--fs-base);
+  }
+
+  .suggestions-container {
+    margin: var(--sp-4) 0 var(--sp-3);
+    padding: var(--sp-4) 0;
+    border-top: 1px solid var(--rule);
+  }
+
+  .suggestions-container .panel-title {
+    display: block;
+    margin-bottom: var(--sp-3);
+  }
+
+  .suggestion-list {
+    flex-direction: column;
+    align-items: stretch;
+    overflow: visible;
+  }
+
+  .suggestion-chip {
+    max-width: none;
+    padding: 6px 10px;
+    white-space: normal;
+  }
+}
+
+/* ------------------------------------------------------- small windows */
+@media (max-width: 639px) {
+  :root {
+    --gutter: var(--sp-3);
+  }
+
+  /*
+   * Two lines: title + time zone, then account + calendar. The status items join the header grid. The backend
+   * URL is hidden (it stays in the title's tooltip); separators are not needed in a grid.
+   */
+  .app-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px var(--sp-3);
+    padding: var(--sp-3) 0 var(--sp-2);
+  }
+
+  .brand {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .brand-title {
+    font-size: var(--fs-lg);
+  }
+
+  .brand-subtitle {
+    display: none;
+  }
+
+  .header-status {
+    display: contents;
+  }
+
+  .status-item {
+    grid-column: 1 / -1;
+  }
+
+  .status-item::before {
+    display: none;
+  }
+
+  .status-item.timezone {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+
+  .status-item.account {
+    grid-column: 1;
+  }
+
+  .status-item.calendar {
+    grid-column: 2;
+    justify-self: end;
+  }
+
+  .chat-feed {
+    margin-right: calc(-1 * var(--gutter));
+    padding-right: 2px;
+  }
+
+  .chat-log {
+    gap: var(--sp-3);
+    padding-top: var(--sp-4);
+  }
+
+  .chat-message {
+    max-width: 92%;
+  }
+
+  .message-bubble {
+    padding: 8px 12px;
+  }
+
+  .mic-control-card {
+    margin-top: var(--sp-2);
+    padding: 6px var(--sp-2) 6px var(--sp-3);
+  }
+
+  .voice-bar {
+    gap: var(--sp-3);
+  }
+
+  .vad-subtext,
+  .vad-count {
+    display: none;
+  }
+
+  .mic-level {
+    flex-basis: 48px;
+  }
+
+  .mic-btn {
+    padding: 0 10px;
+  }
+
+  .transcription-card {
+    gap: 2px;
+  }
+
+  .transcription-row {
+    min-height: 26px;
+  }
+
+  .input-footer {
+    padding: var(--sp-2) 0 var(--sp-3);
+  }
+
+  .input-hints {
+    display: none;
+  }
+
+  .suggestions-container {
+    padding-top: var(--sp-2);
+  }
+}
+
+/*
+ * Very narrow: the account gets a line of its own (the e-mail must stay readable), the calendar mode and its
+ * action go on a third line.
+ */
+@media (max-width: 479px) {
+  .status-item.account,
+  .status-item.calendar {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
+
+@media (max-width: 400px) {
+  .mic-level {
+    display: none;
+  }
+}
+
+/* Short windows: drop secondary lines (URL, voice hint, input hints) so the chat keeps its room. */
+@media (max-height: 640px) {
+  .input-hints {
+    display: none;
+  }
+}
+
+@media (max-height: 640px) and (max-width: 1099px) {
+  .brand-subtitle,
+  .vad-subtext,
+  .vad-count {
+    display: none;
+  }
+
+  .mic-control-card {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  .transcription-card {
+    gap: 2px;
+    padding-top: 6px;
+  }
+}
+
+/* ---------------------------------------------------------------- motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
 }

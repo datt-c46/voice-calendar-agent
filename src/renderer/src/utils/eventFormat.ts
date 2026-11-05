@@ -26,6 +26,22 @@ export function formatEventTime(isoString: string | undefined, timeZone?: string
   return `${get('hour')}:${get('minute')} • ${get('day')}/${get('month')}/${get('year')}`
 }
 
+/**
+ * End of a timed event: just `10:00` when it ends on the day it starts (in the zones it is shown in), otherwise the
+ * full `10:00 • 07/11/2026`.
+ */
+export function formatEventEnd(
+  endIso: string | undefined,
+  endTimeZone?: string,
+  startIso?: string,
+  startTimeZone?: string
+): string {
+  const end = formatEventTime(endIso, endTimeZone)
+  const [endTime, endDate] = end.split(' • ')
+  const startDate = formatEventTime(startIso, startTimeZone).split(' • ')[1]
+  return endDate && endDate === startDate ? endTime : end
+}
+
 /** All-day `YYYY-MM-DD` → `06/11/2026`. */
 export function formatEventDate(date: string): string {
   const [y, m, d] = date.split('-')
