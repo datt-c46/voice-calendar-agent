@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, session } from 'electron'
+import { app, shell, BrowserWindow, nativeTheme, session } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -36,6 +36,10 @@ function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 960,
     height: 720,
+    minWidth: 360,
+    minHeight: 560,
+    // Matches the renderer's paper colour (light/dark) so resizing never flashes another colour.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1b1a18' : '#f6f4ef',
     show: false,
     autoHideMenuBar: true,
     title: 'Voice Calendar Agent',
