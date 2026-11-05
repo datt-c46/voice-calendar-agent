@@ -13,7 +13,7 @@
  *   9. Empty stream handling (no erroneous TTS calls or empty queue items)
  *  10. Stream error handling (graceful degradation, no app crash, no replay)
  *  11. Real-time metric measurement: TTFS (Time to First Sentence), TTFA, Total duration
- *  12. Calendar regression (LIST, CREATE, UPDATE, DELETE) & Asia/Bangkok UTC+7 preservation
+ *  12. Streaming of realistic assistant replies (LIST, CREATE, UPDATE, DELETE) through TTS
  */
 
 import assert from 'node:assert'
@@ -26,8 +26,6 @@ import { TTSQueue } from '../src/renderer/src/services/tts/ttsQueue'
 import { MockTtsProvider } from '../src/renderer/src/services/tts/mockTtsProvider'
 import { formatAgentResponse } from '../src/renderer/src/services/tts/responseFormatter'
 import { defaultLatencyTracker } from '../src/renderer/src/services/telemetry/latencyTracker'
-import { AgentOrchestrator } from '../src/main/agent/agentOrchestrator'
-import { MockCalendarService } from '../src/main/calendar/mockCalendarService'
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -324,68 +322,45 @@ async function runTestSuite(): Promise<void> {
   }
 
   // ----------------------------------------------------
-  // TEST 12: Calendar Regression (LIST, CREATE, UPDATE, DELETE) & Timezone
+  // TEST 12: Streaming of realistic assistant replies through the TTS pipeline
   // ----------------------------------------------------
-  console.log('\n[Test 12] Calendar Regression & Asia/Bangkok (+07:00) Timezone:')
+  console.log('\n[Test 12] Streaming realistic assistant replies (LIST, CREATE, UPDATE, DELETE):')
   {
-    const calService = new MockCalendarService()
-    const orchestrator = new AgentOrchestrator(calService)
+    const replies = [
+      {
+        kind: 'Create',
+        text: 'Đã tạo lịch "Họp với Anh Tuấn" lúc 15:00 ngày 06/11/2026.',
+        mustInclude: '15:00'
+      },
+      {
+        kind: 'List',
+        text: 'Ngày mai bạn có 2 sự kiện:\n1. Họp với Anh Tuấn lúc 15:00\n2. Ăn tối lúc 19:00',
+        mustInclude: '15:00'
+      },
+      {
+        kind: 'Update',
+        text: 'Đã dời lịch "Họp với Anh Tuấn" sang 16:00 ngày 06/11/2026.',
+        mustInclude: '16:00'
+      },
+      {
+        kind: 'Delete',
+        text: 'Đã xóa lịch "Họp với Anh Tuấn" lúc 16:00 ngày 06/11/2026.',
+        mustInclude: '16:00'
+      }
+    ]
 
-    const nowIso = '2026-10-02T08:00:00.000+07:00'
-    const tz = 'Asia/Bangkok'
-
-    // 1. CREATE_EVENT
-    const createRes = await orchestrator.processCommand({
-      text: 'Chiều mai lúc 3 giờ họp với Anh Tuấn',
-      clientTimestamp: nowIso,
-      timeZone: tz
-    })
-    console.log(`  [Create] "${createRes.message}"`)
-    assert.strictEqual(createRes.success, true)
-    assert.strictEqual(createRes.intent, 'CREATE_EVENT')
-
-    // Verify time is formatted in local 15:00 (+07:00), not UTC raw ISO
-    assert.ok(
-      createRes.message.includes('15:00') || createRes.message.includes('3:00'),
-      'Message must contain local formatted time'
-    )
-
-    // 2. LIST_EVENTS
-    const listRes = await orchestrator.processCommand({
-      text: 'Ngày mai tôi có lịch gì?',
-      clientTimestamp: nowIso,
-      timeZone: tz
-    })
-    console.log(`  [List] "${listRes.message}"`)
-    assert.strictEqual(listRes.success, true)
-    assert.strictEqual(listRes.intent, 'LIST_EVENTS')
-
-    // 3. UPDATE_EVENT
-    const updateRes = await orchestrator.processCommand({
-      text: 'Dời cuộc họp lúc 3 giờ chiều ngày mai sang 4 giờ',
-      clientTimestamp: nowIso,
-      timeZone: tz
-    })
-    console.log(`  [Update] "${updateRes.message}"`)
-    assert.strictEqual(updateRes.success, true)
-    assert.strictEqual(updateRes.intent, 'UPDATE_EVENT')
-
-    // 4. DELETE_EVENT
-    const deleteRes = await orchestrator.processCommand({
-      text: 'Xóa cuộc họp lúc 4 giờ chiều ngày mai',
-      clientTimestamp: nowIso,
-      timeZone: tz
-    })
-    console.log(`  [Delete] "${deleteRes.message}"`)
-    assert.strictEqual(deleteRes.success, true)
-    assert.strictEqual(deleteRes.intent, 'DELETE_EVENT')
-
-    // 5. Stream response through TTS pipeline
-    const formatted = formatAgentResponse(createRes.message)
-    const calStream = createMockResponseStream(formatted.ttsText, { chunkDelayMs: 15 })
-    await queue.speakStream(calStream)
-    assert.strictEqual(queue.getStatus().state, 'completed')
-    console.log('  ✓ Calendar CRUD pipeline fully functional with streaming response.')
+    for (const reply of replies) {
+      console.log(`  [${reply.kind}] "${reply.text}"`)
+      const formatted = formatAgentResponse(reply.text)
+      assert.ok(
+        formatted.ttsText.includes(reply.mustInclude),
+        'Spoken text must contain local formatted time'
+      )
+      const replyStream = createMockResponseStream(formatted.ttsText, { chunkDelayMs: 15 })
+      await queue.speakStream(replyStream)
+      assert.strictEqual(queue.getStatus().state, 'completed')
+    }
+    console.log('  ✓ All assistant reply types stream through the TTS pipeline successfully.')
   }
 
   // ----------------------------------------------------
@@ -416,4 +391,7 @@ async function runTestSuite(): Promise<void> {
   console.log('====================================================\n')
 }
 
-void runTestSuite()
+runTestSuite().catch((error) => {
+  console.error(error)
+  process.exit(1)
+})

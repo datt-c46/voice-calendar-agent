@@ -1,6 +1,4 @@
 import assert from 'node:assert'
-import { AgentOrchestrator } from '../src/main/agent/agentOrchestrator'
-import { MockCalendarService } from '../src/main/calendar/mockCalendarService'
 import { MockTtsProvider } from '../src/renderer/src/services/tts/mockTtsProvider'
 import { formatAgentResponse } from '../src/renderer/src/services/tts/responseFormatter'
 import { splitIntoSentences } from '../src/renderer/src/services/tts/sentenceSplitter'
@@ -154,31 +152,34 @@ async function runTestSuite(): Promise<void> {
   assert.strictEqual(preemptQueue.isSpeaking(), false)
   console.log('  ✓ Empty and whitespace strings rejected without queue creation or speech call.')
 
-  // [TEST 8] End-to-End Calendar Operations via AgentOrchestrator & TextToSpeechService
-  console.log('\n[Test 8] End-to-End Calendar Operations & Latency Tracking (Section 19 & 23):')
-  const mockCalendar = new MockCalendarService()
-  const orchestrator = new AgentOrchestrator(mockCalendar)
+  // [TEST 8] Assistant replies via TextToSpeechService
+  console.log('\n[Test 8] Assistant Replies & Latency Tracking (Section 19 & 23):')
   const ttsService = new TextToSpeechService(mockProvider)
   await ttsService.initialize()
 
   const operations = [
-    { query: 'Ngày mai tôi có lịch gì?', intent: 'LIST_EVENTS' },
-    { query: 'Chiều mai lúc 3 giờ họp với A', intent: 'CREATE_EVENT' },
-    { query: 'Dời cuộc họp lúc 3 giờ chiều ngày mai sang 4 giờ', intent: 'UPDATE_EVENT' },
-    { query: 'Xóa cuộc họp lúc 4 giờ chiều ngày mai', intent: 'DELETE_EVENT' }
+    {
+      query: 'Ngày mai tôi có lịch gì?',
+      reply: 'Ngày mai bạn có 2 sự kiện:\n1. Họp với A lúc 15:00\n2. Ăn tối lúc 19:00'
+    },
+    {
+      query: 'Chiều mai lúc 3 giờ họp với A',
+      reply: 'Đã tạo lịch "Họp với A" lúc 15:00 ngày 06/11/2026.'
+    },
+    {
+      query: 'Dời cuộc họp lúc 3 giờ chiều ngày mai sang 4 giờ',
+      reply: 'Đã dời lịch "Họp với A" sang 16:00 ngày 06/11/2026.'
+    },
+    {
+      query: 'Xóa cuộc họp lúc 4 giờ chiều ngày mai',
+      reply: 'Đã xóa lịch "Họp với A" lúc 16:00 ngày 06/11/2026.'
+    }
   ]
 
   for (const op of operations) {
-    const t_agent0 = Date.now()
-    const agentRes = await orchestrator.processCommand({ text: op.query })
-    const agentDuration = Date.now() - t_agent0
-
-    assert.strictEqual(agentRes.success, true)
-    assert.strictEqual(agentRes.intent, op.intent)
-
     // Vocalize via TTS Service Queue
     const t_tts0 = Date.now()
-    await ttsService.speak(agentRes.message)
+    await ttsService.speak(op.reply)
     const ttsDuration = Date.now() - t_tts0
 
     const status = ttsService.getStatus()
@@ -186,25 +187,18 @@ async function runTestSuite(): Promise<void> {
     assert.ok(status.metrics?.totalDurationMs !== null)
 
     console.log(
-      `  ✓ [${agentRes.intent}] "${op.query}" -> Agent: ${agentDuration}ms, Queue TTS: ${ttsDuration}ms (${status.progress?.totalSentences} sentences)`
+      `  ✓ "${op.query}" -> Queue TTS: ${ttsDuration}ms (${status.progress?.totalSentences} sentences)`
     )
   }
 
-  // [TEST 9] Timezone Preservation (Section 20)
-  console.log('\n[Test 9] Timezone Preservation (Asia/Bangkok / UTC+7):')
-  const createCmd = await orchestrator.processCommand({
-    text: 'Chiều mai lúc 3 giờ họp với A'
-  })
-  const event = createCmd.events?.[0]
-  assert.ok(event, 'Created event must exist')
-  assert.strictEqual(event.start.timeZone, 'Asia/Bangkok')
-  assert.ok(event.start.dateTime.includes('15:00:00.000+07:00'))
-
-  // Verify the spoken message uses local time (15:00 or 3 giờ chiều), not UTC (08:00)
-  const spokenFormatted = formatAgentResponse(createCmd.message)
+  // [TEST 9] Local time preserved in spoken text (Section 20)
+  console.log('\n[Test 9] Local Time Preservation in Spoken Text:')
+  const createReply = 'Đã tạo lịch "Họp với A" lúc 15:00 ngày 06/11/2026.'
+  // Verify the spoken message uses local time (15:00), not UTC (08:00)
+  const spokenFormatted = formatAgentResponse(createReply)
   assert.strictEqual(spokenFormatted.ttsText.includes('15:00'), true)
   assert.strictEqual(spokenFormatted.ttsText.includes('08:00'), false)
-  console.log(`  ✓ Spoken time verified as local Asia/Bangkok: "${spokenFormatted.sentences[0]}"`)
+  console.log(`  ✓ Spoken time verified as local: "${spokenFormatted.sentences[0]}"`)
 
   // [TEST 10] Rapid Repeated Start/Stop Cycles (Section 24)
   console.log('\n[Test 10] 10 Rapid Start/Stop Cycles:')

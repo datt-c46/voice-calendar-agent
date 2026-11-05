@@ -8,6 +8,9 @@ import { createMockResponseStream } from '../services/streaming'
 import { TTSQueueProgress } from '../services/tts/types'
 import { defaultLatencyTracker, LatencyMetrics } from '../services/telemetry'
 import { WebSpeechRecognizer } from '../services/stt/webSpeechStt'
+import { parseIpcError } from '../../../shared/errors'
+import { vadAssetBaseUrl } from '../utils/vadAssets'
+import type { AgentCommandResult } from '../../../shared/ipc'
 
 export type VadState =
   | 'idle'
@@ -37,18 +40,8 @@ export interface PipelineLatency {
   interactionId?: string
 }
 
-export interface AgentExecutionResult {
-  success: boolean
-  message: string
-  intent?: string
-  events?: Array<{
-    id: string
-    summary: string
-    start: { dateTime: string; timeZone?: string }
-    end: { dateTime: string; timeZone?: string }
-  }>
-  error?: string
-}
+/** voice-backend agent answer (see shared/ipc). */
+export type AgentExecutionResult = AgentCommandResult
 
 export interface UseVoiceActivityOptions {
   onVoiceCommand?: (text: string) => Promise<AgentExecutionResult | undefined>
@@ -240,8 +233,7 @@ export function useVoiceActivity(options?: UseVoiceActivityOptions): UseVoiceAct
       // Determine the asset base URL dynamically:
       // In development / HTTP dev server, use the full origin path (e.g. "http://localhost:5173/vad/")
       // In production / file protocol, use "./vad/"
-      const isHttp = typeof window !== 'undefined' && window.location.protocol.startsWith('http')
-      const vadBaseUrl = isHttp ? `${window.location.origin}/vad/` : './vad/'
+      const vadBaseUrl = vadAssetBaseUrl(window.location.href)
 
       // 2. Configure Silero VAD options
       const vadOptions: Partial<RealTimeVADOptions> = {
@@ -325,7 +317,7 @@ export function useVoiceActivity(options?: UseVoiceActivityOptions): UseVoiceAct
           const t_speechEnd = Date.now()
 
           try {
-            // Step 1: Hybrid Speech-to-Text Transcription (Web Speech Recognition + Gemini STT Fallback)
+            // Step 1: Hybrid Speech-to-Text (Web Speech Recognition, then voice-backend /voice/transcribe)
             defaultLatencyTracker.recordEvent('STT_START')
             let recognizedText = ''
             let detectedLang: string | undefined = 'vi'
@@ -341,7 +333,7 @@ export function useVoiceActivity(options?: UseVoiceActivityOptions): UseVoiceAct
               }
             }
 
-            // If WebSpeechRecognizer is empty, fallback to Main process Gemini STT via IPC
+            // If WebSpeechRecognizer is empty, fall back to voice-backend STT (IPC -> main -> server)
             if (!recognizedText && window.api && window.api.transcribeAudio) {
               const wavBase64 = float32ToWavBase64(audio, 16000)
               const currentInteractionId = defaultLatencyTracker.getMetrics()?.interactionId
@@ -349,7 +341,6 @@ export function useVoiceActivity(options?: UseVoiceActivityOptions): UseVoiceAct
                 audioBase64: wavBase64,
                 sampleRate: 16000,
                 mimeType: 'audio/wav',
-                durationMs,
                 interactionId: currentInteractionId
               })
 
@@ -449,14 +440,14 @@ export function useVoiceActivity(options?: UseVoiceActivityOptions): UseVoiceAct
                     setVadState('success')
                   } else {
                     setVadState('error')
-                    setError(execResult.error || execResult.message || 'Không thể xử lý yêu cầu.')
+                    setError(execResult.message || 'Không thể xử lý yêu cầu.')
                   }
                 } else {
                   setVadState('success')
                 }
               } catch (agentErr) {
                 const agentErrMsg =
-                  (agentErr as Error)?.message || 'Lỗi xử lý yêu cầu qua Agent/Calendar.'
+                  parseIpcError(agentErr).message || 'Lỗi xử lý yêu cầu qua Agent/Calendar.'
                 console.error('[Voice Pipeline] Agent execution error:', agentErrMsg)
                 defaultLatencyTracker.recordError('AGENT', agentErrMsg)
                 setError(agentErrMsg)
@@ -467,7 +458,7 @@ export function useVoiceActivity(options?: UseVoiceActivityOptions): UseVoiceAct
               setVadState('success')
             }
           } catch (sttErr: unknown) {
-            const errMsg = (sttErr as Error)?.message || 'Không thể nhận diện giọng nói.'
+            const errMsg = parseIpcError(sttErr).message || 'Không thể nhận diện giọng nói.'
             console.error('[Voice Pipeline] STT error:', errMsg)
             defaultLatencyTracker.recordError('STT', errMsg)
             setError(errMsg)

@@ -1,37 +1,45 @@
-import { app, shell, BrowserWindow, session } from 'electron'
+import { app, shell, BrowserWindow, nativeTheme, session } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
-import { AgentOrchestrator } from './agent/agentOrchestrator'
-import { loadEnvConfig } from './auth/envConfig'
-import { OAuthManager } from './auth/oauthManager'
-import { CalendarManager } from './calendar/calendarManager'
-import { registerAuthIpc } from './ipc/authIpc'
-import { registerCalendarIpc } from './ipc/calendarIpc'
-import { registerSttIpc } from './ipc/sttIpc'
-import { registerTtsIpc } from './ipc/ttsIpc'
-import { SpeechToTextManager } from './voice/stt/sttManager'
-import { PiperTtsManager } from './voice/tts/piperManager'
+import { promises as fs } from 'node:fs'
+import { createBackendApi } from './backend/api'
+import { BackendClient } from './backend/backend-client'
+import { resolveBackendConfig } from './backend/config'
+import { ElectronSessionStore } from './backend/electron-session-store'
+import { createIpcHandlers } from './backend/handlers'
+import { signInWithGoogle } from './backend/login'
+import { loadEnvConfig } from './envConfig'
+import { registerBackendIpc } from './ipc/backendIpc'
 
-// Load environment variables (.env) globally
+// VOICE_BACKEND_URL / VOICE_BACKEND_DEV_EMAIL from the environment or .env (no other key is read).
 loadEnvConfig()
+const backendConfig = resolveBackendConfig(process.env)
+if (backendConfig.warning) console.warn(`[config] ${backendConfig.warning}`)
 
 // Allow instant audio playback without user gesture requirement
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
-// Auth, Calendar, STT, TTS manager instances
-const oauthManager = new OAuthManager()
-const calendarService = new CalendarManager(oauthManager)
-const agentOrchestrator = new AgentOrchestrator(calendarService)
-const sttManager = new SpeechToTextManager()
-const piperManager = new PiperTtsManager()
+/** Opens only web links in the system browser (never file:, custom protocols, …). */
+function openWebUrl(url: string): void {
+  try {
+    const { protocol } = new URL(url)
+    if (protocol === 'https:' || protocol === 'http:') void shell.openExternal(url)
+  } catch {
+    // not a URL: ignore
+  }
+}
 
 function createWindow(): void {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
     width: 960,
     height: 720,
+    minWidth: 360,
+    minHeight: 560,
+    // Matches the renderer's paper colour (light/dark) so resizing never flashes another colour.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1b1a18' : '#f6f4ef',
     show: false,
     autoHideMenuBar: true,
     title: 'Voice Calendar Agent',
@@ -48,8 +56,15 @@ function createWindow(): void {
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    openWebUrl(details.url)
     return { action: 'deny' }
+  })
+
+  // The window only ever shows the bundled renderer: send any other navigation to the system browser.
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url === mainWindow.webContents.getURL()) return
+    event.preventDefault()
+    openWebUrl(url)
   })
 
   // HMR for renderer base on electron-vite cli.
@@ -99,14 +114,27 @@ app.whenReady().then(async () => {
     return false
   })
 
-  // Initialize Services & Register IPC
-  await calendarService.initialize()
-  await sttManager.initialize()
-  await piperManager.initialize()
-  registerAuthIpc(oauthManager)
-  registerCalendarIpc(agentOrchestrator, calendarService)
-  registerSttIpc(sttManager)
-  registerTtsIpc(piperManager)
+  // voice-backend session (tokens stay in the main process, encrypted with safeStorage)
+  const userData = app.getPath('userData')
+  const client = new BackendClient({
+    apiUrl: backendConfig.apiUrl,
+    store: new ElectronSessionStore(join(userData, 'backend-session.bin'))
+  })
+  await client.init()
+  // Google tokens of the pre-backend app version are no longer used: delete them.
+  await fs.rm(join(userData, 'auth_tokens.bin'), { force: true }).catch(() => undefined)
+
+  registerBackendIpc(
+    createIpcHandlers({
+      client,
+      api: createBackendApi(client),
+      config: backendConfig,
+      signInWithGoogle: (signal) =>
+        signInWithGoogle({ client, openExternal: (url) => shell.openExternal(url), signal }),
+      log: (message, error) => console.warn(message, error ?? '')
+    }),
+    client
+  )
 
   createWindow()
 

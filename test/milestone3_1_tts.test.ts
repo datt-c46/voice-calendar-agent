@@ -1,6 +1,4 @@
 import assert from 'node:assert'
-import { AgentOrchestrator } from '../src/main/agent/agentOrchestrator'
-import { MockCalendarService } from '../src/main/calendar/mockCalendarService'
 import { MockTtsProvider } from '../src/renderer/src/services/tts/mockTtsProvider'
 import {
   formatAgentResponseForSpeech,
@@ -117,52 +115,41 @@ async function runTestSuite(): Promise<void> {
   assert.strictEqual(ttsService.getStatus().state, 'idle')
   console.log('  ✓ Stop canceled active speech immediately and restored state="idle".')
 
-  // [TEST 6] End-to-end Pipeline: Voice Intent -> Calendar -> Speech Vocalization (Section 17)
-  console.log('\n[Test 6] End-to-end Calendar Command -> Vocalization Flow:')
-  const mockCalendar = new MockCalendarService()
-  const orchestrator = new AgentOrchestrator(mockCalendar)
+  // [TEST 6] Assistant replies -> Speech Vocalization (Section 17)
+  console.log('\n[Test 6] Assistant reply -> Vocalization Flow:')
   mockProvider.clearHistory()
 
   const testMatrix = [
     {
       voiceQuery: 'Ngày mai tôi có lịch gì?',
-      expectedIntent: 'LIST_EVENTS'
+      reply: 'Ngày mai bạn có 2 sự kiện:\n1. Họp với A lúc 15:00\n2. Ăn tối lúc 19:00'
     },
     {
       voiceQuery: 'Chiều mai lúc 3 giờ họp với A',
-      expectedIntent: 'CREATE_EVENT'
+      reply: 'Đã tạo lịch "Họp với A" lúc 15:00 ngày 06/11/2026.'
     },
     {
       voiceQuery: 'Dời cuộc họp lúc 3 giờ chiều ngày mai sang 4 giờ',
-      expectedIntent: 'UPDATE_EVENT'
+      reply: 'Đã dời lịch "Họp với A" sang 16:00 ngày 06/11/2026.'
     },
     {
       voiceQuery: 'Xóa cuộc họp lúc 4 giờ chiều ngày mai',
-      expectedIntent: 'DELETE_EVENT'
+      reply: 'Đã xóa lịch "Họp với A" lúc 16:00 ngày 06/11/2026.'
     },
     {
       voiceQuery: 'What do I have tomorrow?',
-      expectedIntent: 'LIST_EVENTS'
+      reply: 'Bạn có 1 sự kiện vào ngày mai: Họp với A lúc 15:00.'
     }
   ]
 
   for (const item of testMatrix) {
-    const t0 = Date.now()
-    const agentRes = await orchestrator.processCommand({ text: item.voiceQuery })
-    const agentLatency = Date.now() - t0
-
-    assert.strictEqual(agentRes.success, true)
-    assert.strictEqual(agentRes.intent, item.expectedIntent)
-
     // TTS vocalizes the final human-readable message
     const t_tts0 = Date.now()
-    await ttsService.speak(agentRes.message)
+    await ttsService.speak(item.reply)
     const ttsLatency = Date.now() - t_tts0
 
-    console.log(
-      `  ✓ [${agentRes.intent}] "${item.voiceQuery}" -> Agent: ${agentLatency}ms, TTS: ${ttsLatency}ms`
-    )
-    console.log(`    Spoken: "${agentRes.message.split('\n')[0]}..."`)
+    console.log(`  ✓ "${item.voiceQuery}" -> TTS: ${ttsLatency}ms`)
+    console.log(`    Spoken: "${item.reply.split('\n')[0]}..."`)
   }
 
   assert.ok(

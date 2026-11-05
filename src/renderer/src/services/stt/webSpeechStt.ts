@@ -9,8 +9,35 @@ export interface SpeechRecognitionResult {
   language: string
 }
 
+// Minimal typings for the (prefixed) Web Speech API, which TypeScript's DOM lib does not ship.
+interface RecognitionAlternative {
+  transcript: string
+  confidence: number
+}
+interface RecognitionResultLike {
+  readonly isFinal: boolean
+  readonly [index: number]: RecognitionAlternative
+}
+interface RecognitionEventLike {
+  resultIndex: number
+  results: ArrayLike<RecognitionResultLike>
+}
+interface RecognitionLike {
+  continuous: boolean
+  interimResults: boolean
+  lang: string
+  maxAlternatives: number
+  onresult: ((event: RecognitionEventLike) => void) | null
+  onerror: ((event: { error: string }) => void) | null
+  onend: (() => void) | null
+  start(): void
+  stop(): void
+  abort(): void
+}
+type RecognitionCtor = new () => RecognitionLike
+
 export class WebSpeechRecognizer {
-  private recognition: any = null
+  private recognition: RecognitionLike | null = null
   private isListening = false
   private currentTranscript = ''
   private lastConfidence = 0.95
@@ -18,17 +45,21 @@ export class WebSpeechRecognizer {
 
   constructor(lang = 'vi-VN') {
     if (typeof window !== 'undefined') {
-      const SpeechRecognitionClass =
-        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+      const w = window as unknown as {
+        SpeechRecognition?: RecognitionCtor
+        webkitSpeechRecognition?: RecognitionCtor
+      }
+      const SpeechRecognitionClass = w.SpeechRecognition || w.webkitSpeechRecognition
       if (SpeechRecognitionClass) {
         try {
-          this.recognition = new SpeechRecognitionClass()
-          this.recognition.continuous = true
-          this.recognition.interimResults = true
-          this.recognition.lang = lang
-          this.recognition.maxAlternatives = 1
+          const recognition = new SpeechRecognitionClass()
+          this.recognition = recognition
+          recognition.continuous = true
+          recognition.interimResults = true
+          recognition.lang = lang
+          recognition.maxAlternatives = 1
 
-          this.recognition.onresult = (event: any) => {
+          recognition.onresult = (event) => {
             let interim = ''
             for (let i = event.resultIndex; i < event.results.length; ++i) {
               const res = event.results[i]
@@ -46,11 +77,11 @@ export class WebSpeechRecognizer {
             }
           }
 
-          this.recognition.onerror = (event: any) => {
+          recognition.onerror = (event) => {
             console.warn('[WebSpeechRecognizer] Recognition event:', event.error)
           }
 
-          this.recognition.onend = () => {
+          recognition.onend = () => {
             this.isListening = false
             if (this.resolvePromise) {
               const final = this.currentTranscript.trim()

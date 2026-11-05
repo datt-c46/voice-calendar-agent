@@ -10,6 +10,15 @@ import { IResponseStream } from '../streaming/types'
 
 export type TTSStatusListener = (status: TTSStatus) => void
 
+/** The preload bridge exposes server-side (voice-backend Piper) synthesis. */
+function hasPiperApi(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    'api' in window &&
+    typeof window.api?.piperSynthesize === 'function'
+  )
+}
+
 /**
  * High-level Text-To-Speech Service (Milestone 3.2 + Piper Integration).
  *
@@ -29,14 +38,9 @@ export class TextToSpeechService {
   private initialized = false
 
   constructor(customProvider?: ITextToSpeechProvider) {
-    const hasPiperApi =
-      typeof window !== 'undefined' &&
-      'api' in window &&
-      typeof (window as any).api?.piperSynthesize === 'function'
-
     if (customProvider) {
       this.provider = customProvider
-    } else if (hasPiperApi) {
+    } else if (hasPiperApi()) {
       // Prioritize local neural Piper TTS when available
       this.provider = new PiperTtsProvider()
     } else if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -68,12 +72,7 @@ export class TextToSpeechService {
     }
 
     try {
-      const hasPiper =
-        typeof window !== 'undefined' &&
-        'api' in window &&
-        typeof (window as any).api?.piperSynthesize === 'function'
-
-      if (hasPiper && this.provider.id !== 'piper-tts') {
+      if (hasPiperApi() && this.provider.id !== 'piper-tts') {
         this.provider = new PiperTtsProvider()
         this.queue.setProvider(this.provider)
       }
@@ -81,7 +80,11 @@ export class TextToSpeechService {
       const isAvail = await this.provider.isAvailable()
       if (!isAvail) {
         // Fallback chain: Piper -> Web Speech -> Mock
-        if (this.provider.id === 'piper-tts' && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        if (
+          this.provider.id === 'piper-tts' &&
+          typeof window !== 'undefined' &&
+          'speechSynthesis' in window
+        ) {
           console.warn('[TTS] Piper TTS unavailable, falling back to Web Speech API.')
           this.provider = new WebSpeechTtsProvider()
           this.queue.setProvider(this.provider)
@@ -107,9 +110,21 @@ export class TextToSpeechService {
     return this.provider
   }
 
-  public async setProviderById(
-    providerId: 'piper-tts' | 'web-speech' | 'mock-tts'
-  ): Promise<void> {
+  /**
+   * Re-runs provider selection, e.g. after signing in to voice-backend: server voices are unavailable while signed
+   * out, so initialize() may have fallen back to Web Speech.
+   */
+  public async reinitialize(): Promise<void> {
+    this.stop()
+    if (hasPiperApi() && this.provider.id !== 'piper-tts') {
+      this.provider = new PiperTtsProvider()
+      this.queue.setProvider(this.provider)
+    }
+    this.initialized = false
+    await this.initialize()
+  }
+
+  public async setProviderById(providerId: 'piper-tts' | 'web-speech' | 'mock-tts'): Promise<void> {
     let newProvider: ITextToSpeechProvider
     if (providerId === 'piper-tts') {
       newProvider = new PiperTtsProvider()
