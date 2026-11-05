@@ -3,14 +3,20 @@ import React, { useState } from 'react'
 interface CommandInputProps {
   onSendCommand: (text: string) => void
   isProcessing: boolean
+  /** Signed out: the agent cannot be reached. */
+  disabled?: boolean
 }
 
-export const CommandInput: React.FC<CommandInputProps> = ({ onSendCommand, isProcessing }) => {
+export const CommandInput: React.FC<CommandInputProps> = ({
+  onSendCommand,
+  isProcessing,
+  disabled
+}) => {
   const [text, setText] = useState('')
 
   const handleSubmit = (e: React.FormEvent): void => {
     e.preventDefault()
-    if (!text.trim() || isProcessing) return
+    if (!text.trim() || isProcessing || disabled) return
     onSendCommand(text.trim())
     setText('')
   }
@@ -29,14 +35,22 @@ export const CommandInput: React.FC<CommandInputProps> = ({ onSendCommand, isPro
           <input
             type="text"
             className="command-input"
-            placeholder="Nhập lệnh tự nhiên (ví dụ: Chiều mai lúc 3 giờ họp với A)..."
+            placeholder={
+              disabled
+                ? 'Hãy đăng nhập để bắt đầu...'
+                : 'Nhập lệnh tự nhiên (ví dụ: Chiều mai lúc 3 giờ họp với A)...'
+            }
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={isProcessing}
+            disabled={isProcessing || disabled}
             autoFocus
           />
-          <button type="submit" className="send-btn" disabled={!text.trim() || isProcessing}>
+          <button
+            type="submit"
+            className="send-btn"
+            disabled={!text.trim() || isProcessing || disabled}
+          >
             {isProcessing ? 'Đang gửi...' : 'Gửi ↵'}
           </button>
         </div>

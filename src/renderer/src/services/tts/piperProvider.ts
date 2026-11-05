@@ -1,113 +1,104 @@
+import type { CalendarAgentAPI } from '../../../../shared/ipc'
 import { ITextToSpeechProvider } from './ITextToSpeechProvider'
 import { SpeakOptions, TTSVoice } from './types'
 
-/**
- * Piper Neural Text-to-Speech Provider.
- * Connects renderer to local Piper neural TTS engine running in the Electron Main process.
- * Provides high-quality offline Vietnamese neural voices (e.g. VIVOS, 25Hours).
- */
-// Helper to safely access window.api in both renderer and node/test environments
-function getWindowApi(): any {
-  if (typeof window !== 'undefined' && 'api' in window) {
-    return (window as any).api
-  }
+/** voice-backend rejects texts over TTS_MAX_CHARS (default 1000). */
+export const MAX_TTS_CHARS = 900
+
+/** Voice shown when the server list is unavailable; never sent to the server (it picks the user's voice). */
+const SERVER_DEFAULT_VOICE: TTSVoice = {
+  id: 'server-default',
+  name: 'Giọng mặc định của server',
+  lang: 'vi-VN',
+  isDefault: true,
+  localService: false
+}
+
+// Safe access to window.api in both renderer and node/test environments.
+function getWindowApi(): CalendarAgentAPI | undefined {
+  if (typeof window !== 'undefined' && 'api' in window) return window.api
   return undefined
 }
 
+/** Splits text into pieces of at most `max` chars, preferring sentence, then word boundaries. */
+export function chunkTextForTts(text: string, max = MAX_TTS_CHARS): string[] {
+  const chunks: string[] = []
+  let rest = text.trim()
+  while (rest.length > max) {
+    const head = rest.slice(0, max + 1)
+    let cut = Math.max(head.lastIndexOf('. '), head.lastIndexOf('! '), head.lastIndexOf('? '))
+    if (cut > 0) cut += 1
+    else cut = Math.max(head.lastIndexOf(', '), head.lastIndexOf('; '))
+    if (cut <= 0) cut = head.lastIndexOf(' ')
+    if (cut <= 0) cut = max
+    chunks.push(rest.slice(0, cut).trim())
+    rest = rest.slice(cut).trim()
+  }
+  if (rest) chunks.push(rest)
+  return chunks
+}
+
+/**
+ * Piper neural TTS running on voice-backend (renderer → IPC → main → POST /tts/synthesize).
+ * The voice is chosen by the server from the user's settings (`PATCH /me/settings ttsVoiceId`).
+ */
 export class PiperTtsProvider implements ITextToSpeechProvider {
   public readonly id = 'piper-tts'
-  public readonly name = 'Piper Neural TTS (Local)'
+  public readonly name = 'Piper Neural TTS (voice-backend)'
 
   private speaking = false
+  /** Bumped by stop(): a synthesis that finishes after stop() must not start playing. */
+  private generation = 0
   private currentAudio: HTMLAudioElement | null = null
   private currentBlobUrl: string | null = null
   private cachedVoices: TTSVoice[] | null = null
+  private audioContext: AudioContext | null = null
+  private currentSource: AudioBufferSourceNode | null = null
+  private pendingResolve: (() => void) | null = null
 
   public async isAvailable(): Promise<boolean> {
-    if (typeof window === 'undefined') {
-      return true
-    }
+    if (typeof window === 'undefined') return true
     const api = getWindowApi()
-    if (!api?.getPiperStatus) {
-      return true
-    }
-
+    if (!api?.getPiperStatus) return true
     try {
-      const status = await api.getPiperStatus()
-      return status?.isAvailable ?? true
+      // false while signed out or when the server has TTS disabled
+      return (await api.getPiperStatus()).isAvailable
     } catch {
-      return true
+      return false
     }
   }
 
   public async getVoices(): Promise<TTSVoice[]> {
-    if (this.cachedVoices && this.cachedVoices.length > 0) {
-      return this.cachedVoices
-    }
+    if (this.cachedVoices && this.cachedVoices.length > 0) return this.cachedVoices
 
     const api = getWindowApi()
-    if (!api?.getPiperVoices) {
-      return [
-        {
-          id: 'vi_VN-vivos-x_low',
-          name: 'Piper Vietnamese VIVOS (x_low)',
-          lang: 'vi-VN',
-          isDefault: true,
-          localService: true
-        },
-        {
-          id: 'vi_VN-25hours-low',
-          name: 'Piper Vietnamese 25Hours (low)',
-          lang: 'vi-VN',
-          isDefault: false,
-          localService: true
-        }
-      ]
-    }
+    if (!api?.getPiperVoices) return [SERVER_DEFAULT_VOICE]
 
     try {
-      const piperVoices = await api.getPiperVoices()
-      if (piperVoices && piperVoices.length > 0) {
-        this.cachedVoices = piperVoices.map((v: any) => ({
+      const voices = await api.getPiperVoices()
+      if (voices.length > 0) {
+        this.cachedVoices = voices.map((v) => ({
           id: v.id,
           name: v.name,
           lang: v.lang,
           isDefault: v.isDefault,
-          localService: true
+          localService: false
         }))
-        return this.cachedVoices || []
+        return this.cachedVoices
       }
     } catch (err) {
-      console.warn('[PiperTtsProvider] Failed to fetch voices from Main process:', err)
+      console.warn('[PiperTtsProvider] Failed to fetch server voices:', err)
     }
-
-    // Default fallback voices
-    return [
-      {
-        id: 'vi_VN-vivos-x_low',
-        name: 'Piper Vietnamese VIVOS (x_low)',
-        lang: 'vi-VN',
-        isDefault: true,
-        localService: true
-      },
-      {
-        id: 'vi_VN-25hours-low',
-        name: 'Piper Vietnamese 25Hours (low)',
-        lang: 'vi-VN',
-        isDefault: false,
-        localService: true
-      }
-    ]
+    return [SERVER_DEFAULT_VOICE]
   }
 
   public async speak(text: string, options?: SpeakOptions): Promise<void> {
     const trimmed = text.trim()
-    if (!trimmed) {
-      return
-    }
+    if (!trimmed) return
 
     // Stop previous playback if any
     this.stop()
+    const generation = this.generation
 
     const api = getWindowApi()
     if (!api?.piperSynthesize) {
@@ -116,20 +107,16 @@ export class PiperTtsProvider implements ITextToSpeechProvider {
     }
 
     try {
-      const voiceId = options?.voice?.id || 'vi_VN-vivos-x_low'
-      const synthesizeResult = await api.piperSynthesize({
-        text: trimmed,
-        voiceId,
-        rate: options?.rate ?? 1.0,
-        pitch: options?.pitch ?? 1.0,
-        volume: options?.volume ?? 1.0
-      })
-
-      if (!synthesizeResult || !synthesizeResult.audioBase64) {
-        throw new Error('Piper TTS returned empty audio payload.')
+      for (const chunk of chunkTextForTts(trimmed)) {
+        const result = await api.piperSynthesize({
+          text: chunk,
+          ...(options?.rate !== undefined && options.rate !== 1 ? { rate: options.rate } : {})
+        })
+        if (generation !== this.generation) return // stopped while synthesizing
+        if (!result?.audioBase64) throw new Error('Piper TTS returned empty audio payload.')
+        await this.playAudioFromBase64(result.audioBase64, result.mimeType, options)
+        if (generation !== this.generation) return
       }
-
-      await this.playAudioFromBase64(synthesizeResult.audioBase64, synthesizeResult.mimeType, options)
     } catch (err: unknown) {
       const errorObj = err instanceof Error ? err : new Error(String(err))
       console.error('[PiperTtsProvider] Synthesis/playback error:', errorObj)
@@ -139,17 +126,12 @@ export class PiperTtsProvider implements ITextToSpeechProvider {
     }
   }
 
-  private audioContext: AudioContext | null = null
-  private currentSource: AudioBufferSourceNode | null = null
-
   private getAudioContext(): AudioContext | null {
-    if (typeof window === 'undefined') {
-      return null
-    }
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
-    if (!AudioCtx) {
-      return null
-    }
+    if (typeof window === 'undefined') return null
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!AudioCtx) return null
     if (!this.audioContext || this.audioContext.state === 'closed') {
       this.audioContext = new AudioCtx()
     }
@@ -164,8 +146,7 @@ export class PiperTtsProvider implements ITextToSpeechProvider {
     mimeType = 'audio/wav',
     options?: SpeakOptions
   ): Promise<void> {
-    const cleanBase64 = base64.replace(/\s+/g, '')
-    const byteCharacters = atob(cleanBase64)
+    const byteCharacters = atob(base64.replace(/\s+/g, ''))
     const arrayBuffer = new ArrayBuffer(byteCharacters.length)
     const byteArray = new Uint8Array(arrayBuffer)
     for (let i = 0; i < byteCharacters.length; i++) {
@@ -174,22 +155,20 @@ export class PiperTtsProvider implements ITextToSpeechProvider {
 
     const ctx = this.getAudioContext()
 
-    // 1. Primary: High-fidelity Web Audio API playback
+    // 1. Primary: Web Audio API playback (the server already applied the speaking rate)
     if (ctx) {
       return new Promise<void>((resolve) => {
+        this.pendingResolve = resolve
         ctx.decodeAudioData(
           arrayBuffer.slice(0),
           (audioBuffer) => {
+            if (this.pendingResolve !== resolve) return // stopped while decoding
             const source = ctx.createBufferSource()
             source.buffer = audioBuffer
 
             const gainNode = ctx.createGain()
             const vol = options?.volume !== undefined ? options.volume : 1.0
             gainNode.gain.value = Math.max(0, Math.min(1, vol))
-
-            if (options?.rate !== undefined && options.rate > 0) {
-              source.playbackRate.value = Math.max(0.25, Math.min(4.0, options.rate))
-            }
 
             source.connect(gainNode)
             gainNode.connect(ctx.destination)
@@ -200,16 +179,19 @@ export class PiperTtsProvider implements ITextToSpeechProvider {
 
             source.onended = () => {
               this.speaking = false
-              this.currentSource = null
+              if (this.currentSource === source) this.currentSource = null
+              this.settle(resolve)
               options?.onEnd?.()
-              resolve()
             }
 
             source.start(0)
           },
           (decodeErr) => {
-            console.warn('[PiperTtsProvider] decodeAudioData error, falling back to Audio element:', decodeErr)
-            this.fallbackAudioElementPlay(byteArray, mimeType, options, resolve)
+            console.warn(
+              '[PiperTtsProvider] decodeAudioData error, falling back to Audio element:',
+              decodeErr
+            )
+            this.fallbackAudioElementPlay(arrayBuffer, mimeType, options, resolve)
           }
         )
       })
@@ -217,57 +199,49 @@ export class PiperTtsProvider implements ITextToSpeechProvider {
 
     // 2. Secondary fallback: HTMLAudioElement
     return new Promise<void>((resolve) => {
-      this.fallbackAudioElementPlay(byteArray, mimeType, options, resolve)
+      this.pendingResolve = resolve
+      this.fallbackAudioElementPlay(arrayBuffer, mimeType, options, resolve)
     })
   }
 
+  /** Resolves a playback promise once (stop() also resolves it so the queue never hangs). */
+  private settle(resolve: () => void): void {
+    if (this.pendingResolve === resolve) this.pendingResolve = null
+    resolve()
+  }
+
   private fallbackAudioElementPlay(
-    byteArray: Uint8Array,
+    audioData: ArrayBuffer,
     mimeType: string,
     options: SpeakOptions | undefined,
     resolve: () => void
   ): void {
+    const finish = (): void => {
+      this.cleanupCurrentAudio()
+      options?.onEnd?.()
+      this.settle(resolve)
+    }
     try {
-      const blob = new Blob([byteArray as any], { type: mimeType || 'audio/wav' })
-      const blobUrl = URL.createObjectURL(blob)
-
+      const blobUrl = URL.createObjectURL(new Blob([audioData], { type: mimeType || 'audio/wav' }))
       this.currentBlobUrl = blobUrl
       const audio = new Audio(blobUrl)
       this.currentAudio = audio
 
       const vol = options?.volume !== undefined ? options.volume : 1.0
       audio.volume = Math.max(0, Math.min(1, vol))
-      if (options?.rate !== undefined) {
-        audio.playbackRate = Math.max(0.25, Math.min(4.0, options.rate))
-      }
 
       audio.onplay = () => {
         this.speaking = true
         options?.onStart?.()
       }
-
-      audio.onended = () => {
-        this.cleanupCurrentAudio()
-        options?.onEnd?.()
-        resolve()
-      }
-
-      audio.onerror = () => {
-        this.cleanupCurrentAudio()
-        options?.onEnd?.()
-        resolve()
-      }
-
+      audio.onended = finish
+      audio.onerror = finish
       audio.play().catch((playErr) => {
         console.warn('[PiperTtsProvider] audio.play() promise catch:', playErr)
-        this.cleanupCurrentAudio()
-        options?.onEnd?.()
-        resolve()
+        finish()
       })
     } catch {
-      this.cleanupCurrentAudio()
-      options?.onEnd?.()
-      resolve()
+      finish()
     }
   }
 
@@ -287,11 +261,12 @@ export class PiperTtsProvider implements ITextToSpeechProvider {
   }
 
   public stop(): void {
+    this.generation++
     if (this.currentSource) {
       try {
         this.currentSource.stop()
       } catch {
-        // Ignore
+        // already stopped
       }
       this.currentSource = null
     }
@@ -304,6 +279,8 @@ export class PiperTtsProvider implements ITextToSpeechProvider {
       }
     }
     this.cleanupCurrentAudio()
+    const pending = this.pendingResolve
+    if (pending) this.settle(pending)
   }
 
   public isSpeaking(): boolean {

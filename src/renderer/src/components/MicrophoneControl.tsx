@@ -5,9 +5,14 @@ import { TranscriptionDisplay } from './TranscriptionDisplay'
 
 interface MicrophoneControlProps {
   onVoiceCommand?: (text: string) => Promise<AgentExecutionResult | undefined>
+  /** Signed out: listening would only produce errors. */
+  disabled?: boolean
 }
 
-export const MicrophoneControl: React.FC<MicrophoneControlProps> = ({ onVoiceCommand }) => {
+export const MicrophoneControl: React.FC<MicrophoneControlProps> = ({
+  onVoiceCommand,
+  disabled
+}) => {
   const {
     vadState,
     isSpeechDetected,
@@ -74,7 +79,8 @@ export const MicrophoneControl: React.FC<MicrophoneControlProps> = ({ onVoiceCom
               type="button"
               className="mic-btn mic-btn-start"
               onClick={start}
-              disabled={isInitializing}
+              disabled={isInitializing || disabled}
+              title={disabled ? 'Hãy đăng nhập trước' : undefined}
               aria-label="Start Listening"
             >
               <span className="mic-btn-icon">{isInitializing ? '⏳' : '🎙'}</span>

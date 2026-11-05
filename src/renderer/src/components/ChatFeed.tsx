@@ -8,14 +8,25 @@ export interface ChatMessage {
   intent?: string
   timestamp: string
   events?: CalendarEventProps[]
+  /** Delete/update waiting for confirmation (backend pendingAction.id). */
+  pendingActionId?: string
+  /** The pending action was confirmed, rejected or answered by voice/text. */
+  actionResolved?: boolean
 }
 
 interface ChatFeedProps {
   messages: ChatMessage[]
   isProcessing: boolean
+  onConfirmAction?: (actionId: string) => void
+  onRejectAction?: (actionId: string) => void
 }
 
-export const ChatFeed: React.FC<ChatFeedProps> = ({ messages, isProcessing }) => {
+export const ChatFeed: React.FC<ChatFeedProps> = ({
+  messages,
+  isProcessing,
+  onConfirmAction,
+  onRejectAction
+}) => {
   const feedEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -34,6 +45,27 @@ export const ChatFeed: React.FC<ChatFeedProps> = ({ messages, isProcessing }) =>
                 {msg.events.map((evt, idx) => (
                   <EventCard key={evt.id || `evt-${idx}`} event={evt} />
                 ))}
+              </div>
+            )}
+
+            {msg.pendingActionId && !msg.actionResolved && (
+              <div className="pending-actions">
+                <button
+                  className="pending-btn confirm"
+                  disabled={isProcessing}
+                  onClick={() => onConfirmAction?.(msg.pendingActionId as string)}
+                  type="button"
+                >
+                  ✔ Xác nhận
+                </button>
+                <button
+                  className="pending-btn reject"
+                  disabled={isProcessing}
+                  onClick={() => onRejectAction?.(msg.pendingActionId as string)}
+                  type="button"
+                >
+                  ✖ Hủy
+                </button>
               </div>
             )}
           </div>

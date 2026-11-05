@@ -993,3 +993,42 @@ body {
 .tts-warning-icon {
   font-size: 12px;
 }
+
+/* Confirm / cancel a pending delete or update (voice-backend pendingAction) */
+.pending-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.pending-btn {
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pending-btn.confirm {
+  border-color: rgba(16, 185, 129, 0.5);
+  color: #a7f3d0;
+}
+
+.pending-btn.reject {
+  border-color: rgba(244, 63, 94, 0.5);
+  color: #fecdd3;
+}
+
+.pending-btn:hover:not(:disabled) {
+  background: var(--bg-surface-hover);
+  transform: translateY(-1px);
+}
+
+.pending-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

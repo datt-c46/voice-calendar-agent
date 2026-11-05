@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { parseIpcError } from '../../shared/errors'
+import type { AgentCommandResult, AuthStatusDTO, CalendarStatusDTO } from '../../shared/ipc'
 import { ChatFeed, ChatMessage } from './components/ChatFeed'
 import { CommandInput } from './components/CommandInput'
 import { CommandSuggestions } from './components/CommandSuggestions'
-import { AuthState, Header } from './components/Header'
+import { Header } from './components/Header'
 import { MicrophoneControl } from './components/MicrophoneControl'
 import { AgentExecutionResult } from './hooks/useVoiceActivity'
 import { defaultTtsService } from './services/tts/ttsService'
@@ -10,14 +12,31 @@ import { formatAgentResponse } from './services/tts/responseFormatter'
 import { createMockResponseStream } from './services/streaming'
 
 function formatCurrentTime(): string {
-  const now = new Date()
-  const formatter = new Intl.DateTimeFormat('vi-VN', {
-    timeZone: 'Asia/Bangkok',
+  return new Intl.DateTimeFormat('vi-VN', {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false
-  })
-  return formatter.format(now)
+  }).format(new Date())
+}
+
+let messageSeq = 0
+const nextId = (prefix: string): string => `${prefix}-${Date.now()}-${++messageSeq}`
+
+/** Reads the reply aloud through the TTS queue (voice-backend Piper, Web Speech as fallback). */
+function speakReply(text: string): void {
+  try {
+    const formatted = formatAgentResponse(text)
+    const stream = createMockResponseStream(formatted.ttsText || text, { chunkDelayMs: 20 })
+    void defaultTtsService.speakStream(stream)
+  } catch (ttsErr) {
+    console.warn('[App] TTS playback error:', ttsErr)
+  }
+}
+
+interface SendOptions {
+  /** false when the voice pipeline (useVoiceActivity) speaks the answer itself. */
+  speak?: boolean
+  source?: 'text' | 'voice'
 }
 
 export function App(): React.JSX.Element {
@@ -25,269 +44,239 @@ export function App(): React.JSX.Element {
     {
       id: 'welcome-msg',
       sender: 'assistant',
-      text: 'Xin chào! Tôi là Trợ lý Lịch trình (Voice Calendar Agent).\n\nỨng dụng hỗ trợ cả giọng nói (VAD + STT + TTS) và Google Calendar thật lẫn Mock Mode ngoại tuyến. Bạn có thể nói hoặc nhập các câu lệnh bên dưới:',
+      text: 'Xin chào! Tôi là Trợ lý Lịch trình (Voice Calendar Agent).\n\nỨng dụng chạy trên voice-backend: đăng nhập bằng Google để dùng Google Calendar của bạn (tài khoản dev dùng lịch local trên server). Sau đó bạn có thể nói hoặc nhập các câu lệnh bên dưới:',
       timestamp: formatCurrentTime()
     }
   ])
-
-  const [status, setStatus] = useState<{
-    mode: string
-    connected: boolean
-    timeZone: string
-    eventCount: number
-  }>({
-    mode: 'mock',
-    connected: true,
-    timeZone: 'Asia/Bangkok',
-    eventCount: 4
-  })
-
-  const [authState, setAuthState] = useState<AuthState>('NOT_CONFIGURED')
-  const [userEmail, setUserEmail] = useState<string | null>(null)
-  const [authError, setAuthError] = useState<string | undefined>(undefined)
+  const [auth, setAuth] = useState<AuthStatusDTO | null>(null)
+  const [calendar, setCalendar] = useState<CalendarStatusDTO | null>(null)
+  const [signingIn, setSigningIn] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
+  /** Sent with every command so "có"/"không" answers and follow-ups stay in the same backend conversation. */
+  const conversationIdRef = useRef<string | undefined>(undefined)
+  const signedInRef = useRef(false)
 
-  // Fetch initial calendar status and Google auth status
-  useEffect(() => {
-    async function loadInitialState(): Promise<void> {
-      try {
-        if (window.api) {
-          // Check auth status
-          if (window.api.getAuthStatus) {
-            const authRes = await window.api.getAuthStatus()
-            if (!authRes.isConfigured) {
-              setAuthState('NOT_CONFIGURED')
-            } else if (authRes.isAuthenticated) {
-              setAuthState('CONNECTED')
-              setUserEmail(authRes.userEmail || null)
-            } else {
-              setAuthState('DISCONNECTED')
-            }
-          }
-
-          // Check calendar status
-          if (window.api.getCalendarStatus) {
-            const calRes = await window.api.getCalendarStatus()
-            setStatus({
-              mode: calRes.mode,
-              connected: calRes.connected,
-              timeZone: calRes.timeZone,
-              eventCount: calRes.eventCount || 0
-            })
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load initial status:', err)
-      }
-    }
-    loadInitialState()
+  const addAssistantMessage = useCallback((text: string): void => {
+    setMessages((prev) => [
+      ...prev,
+      { id: nextId('asst'), sender: 'assistant', text, timestamp: formatCurrentTime() }
+    ])
   }, [])
 
-  const handleConnect = async (): Promise<void> => {
-    setAuthState('AUTHENTICATING')
-    setAuthError(undefined)
-
+  const refreshCalendar = useCallback(async (): Promise<void> => {
     try {
-      if (window.api && window.api.startGoogleAuth) {
-        const res = await window.api.startGoogleAuth()
-        if (res.isAuthenticated) {
-          setAuthState('CONNECTED')
-          setUserEmail(res.userEmail || null)
-
-          // Refresh calendar status
-          if (window.api.getCalendarStatus) {
-            const calRes = await window.api.getCalendarStatus()
-            setStatus({
-              mode: calRes.mode,
-              connected: calRes.connected,
-              timeZone: calRes.timeZone,
-              eventCount: calRes.eventCount || 0
-            })
-          }
-
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `asst-auth-${Date.now()}`,
-              sender: 'assistant',
-              text: `✅ Đã kết nối thành công với tài khoản Google Calendar: ${res.userEmail || ''}! Các lệnh tiếp theo sẽ đồng bộ trực tiếp với Google Calendar thật.`,
-              timestamp: formatCurrentTime()
-            }
-          ])
-        } else {
-          setAuthState('DISCONNECTED')
-          if (res.error) {
-            setAuthError(res.error)
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: `asst-auth-err-${Date.now()}`,
-                sender: 'assistant',
-                text: `Chưa thể hoàn tất đăng nhập Google: ${res.error}. Ứng dụng tiếp tục sử dụng Mock Calendar.`,
-                timestamp: formatCurrentTime()
-              }
-            ])
-          }
-        }
-      }
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err)
-      setAuthState('ERROR')
-      setAuthError(errMsg)
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `asst-auth-err-${Date.now()}`,
-          sender: 'assistant',
-          text: `⚠️ Lỗi xác thực: ${errMsg}. Ứng dụng vẫn hoạt động bình thường với Mock Calendar.`,
-          timestamp: formatCurrentTime()
-        }
-      ])
+      setCalendar(await window.api.getCalendarStatus())
+    } catch (err) {
+      console.warn('Failed to load calendar status:', parseIpcError(err).message)
+      setCalendar(null)
     }
-  }
+  }, [])
 
-  const handleDisconnect = async (): Promise<void> => {
+  const applyAuth = useCallback(
+    (status: AuthStatusDTO): void => {
+      setAuth(status)
+      const wasSignedIn = signedInRef.current
+      signedInRef.current = status.isAuthenticated
+      if (status.isAuthenticated) {
+        void refreshCalendar()
+        // TTS fell back to Web Speech while signed out: switch to the server voice now.
+        if (!wasSignedIn) void defaultTtsService.reinitialize()
+      } else {
+        setCalendar(null)
+        conversationIdRef.current = undefined
+      }
+    },
+    [refreshCalendar]
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    window.api
+      .getAuthStatus()
+      .then((status) => {
+        if (!cancelled) applyAuth(status)
+      })
+      .catch((err) => console.error('Failed to load auth status:', parseIpcError(err).message))
+    // Sign-in / sign-out / session expiry pushed by the main process.
+    const unsubscribe = window.api.onAuthChanged((status) => applyAuth(status))
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [applyAuth])
+
+  const runSignIn = async (signIn: () => Promise<AuthStatusDTO>): Promise<void> => {
+    setSigningIn(true)
     try {
-      if (window.api && window.api.logoutGoogle) {
-        await window.api.logoutGoogle()
-        setAuthState('DISCONNECTED')
-        setUserEmail(null)
-        setAuthError(undefined)
-
-        // Refresh calendar status to switch back to mock
-        if (window.api.getCalendarStatus) {
-          const calRes = await window.api.getCalendarStatus()
-          setStatus({
-            mode: calRes.mode,
-            connected: calRes.connected,
-            timeZone: calRes.timeZone,
-            eventCount: calRes.eventCount || 0
-          })
-        }
-
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `asst-auth-logout-${Date.now()}`,
-            sender: 'assistant',
-            text: 'Đã ngắt kết nối tài khoản Google Calendar. Ứng dụng đã chuyển về chế độ Mock Calendar.',
-            timestamp: formatCurrentTime()
-          }
-        ])
+      const res = await signIn()
+      applyAuth(res)
+      if (res.error) {
+        if (res.error !== 'SIGN_IN_CANCELLED')
+          addAssistantMessage(`Chưa thể đăng nhập: ${res.errorMessage}`)
+      } else if (res.isAuthenticated) {
+        addAssistantMessage(
+          res.calendarProvider === 'google'
+            ? `✅ Đã đăng nhập ${res.userEmail ?? ''}. Các lệnh sẽ thao tác trực tiếp trên Google Calendar.`
+            : `✅ Đã đăng nhập ${res.userEmail ?? ''}. Đang dùng lịch local trên server.`
+        )
       }
     } catch (err) {
-      console.error('Logout failed:', err)
+      addAssistantMessage(`⚠️ Lỗi đăng nhập: ${parseIpcError(err).message}`)
+    } finally {
+      setSigningIn(false)
     }
   }
 
-  const handleSendCommand = async (text: string): Promise<AgentExecutionResult | undefined> => {
-    const userMsg: ChatMessage = {
-      id: `user-${Date.now()}`,
-      sender: 'user',
-      text,
-      timestamp: formatCurrentTime()
-    }
-
-    setMessages((prev) => [...prev, userMsg])
-    setIsProcessing(true)
-
+  const handleSignOut = async (): Promise<void> => {
     try {
-      if (window.api && window.api.executeCommand) {
-        const response = await window.api.executeCommand({
-          text,
-          clientTimestamp: new Date().toISOString(),
-          timeZone: status.timeZone
-        })
+      defaultTtsService.stop()
+      applyAuth(await window.api.signOut())
+      addAssistantMessage('Đã đăng xuất khỏi voice-backend.')
+    } catch (err) {
+      addAssistantMessage(`⚠️ Đăng xuất thất bại: ${parseIpcError(err).message}`)
+    }
+  }
 
-        const assistantMsg: ChatMessage = {
-          id: `asst-${Date.now()}`,
+  const handleDisconnectGoogle = async (): Promise<void> => {
+    const res = await window.api.disconnectGoogle()
+    applyAuth(res)
+    addAssistantMessage(
+      res.error
+        ? `⚠️ Không ngắt được Google: ${res.errorMessage}`
+        : 'Đã thu hồi quyền Google. Lịch chuyển sang lịch local trên server.'
+    )
+  }
+
+  /** Appends an agent answer, keeps its conversation id and reacts to session/Google errors. */
+  const handleAgentResult = useCallback(
+    (response: AgentCommandResult, speak: boolean, resolvedActionId?: string): void => {
+      if (response.conversationId) conversationIdRef.current = response.conversationId
+      const pendingActionId =
+        response.requiresConfirmation && response.pendingAction
+          ? response.pendingAction.id
+          : undefined
+      // A yes/no answer (button, text or voice) settles every pending question shown so far.
+      const settlesAll = response.intent === 'CONFIRM_ACTION' || response.intent === 'REJECT_ACTION'
+      const settled = response.intent !== 'ERROR'
+
+      setMessages((prev) => [
+        ...prev.map((m) =>
+          m.pendingActionId &&
+          !m.actionResolved &&
+          (settlesAll || (settled && m.pendingActionId === resolvedActionId))
+            ? { ...m, actionResolved: true }
+            : m
+        ),
+        {
+          id: nextId('asst'),
           sender: 'assistant',
           text: response.message,
           intent: response.intent,
           timestamp: formatCurrentTime(),
-          events: response.events
+          ...(response.events ? { events: response.events } : {}),
+          ...(pendingActionId ? { pendingActionId } : {})
         }
+      ])
 
-        setMessages((prev) => [...prev, assistantMsg])
+      const code = response.error?.code
+      if (code === 'UNAUTHORIZED') {
+        void window.api.getAuthStatus().then(applyAuth)
+      } else if (code === 'GOOGLE_REAUTH_REQUIRED') {
+        void refreshCalendar()
+      }
+      if (speak && response.message) speakReply(response.message)
+    },
+    [applyAuth, refreshCalendar]
+  )
 
-        // Trigger Piper Neural TTS playback
-        if (response.message) {
-          try {
-            const formatted = formatAgentResponse(response.message)
-            const stream = createMockResponseStream(formatted.ttsText || response.message, { chunkDelayMs: 20 })
-            void defaultTtsService.speakStream(stream)
-          } catch (ttsErr) {
-            console.warn('[App] TTS playback error:', ttsErr)
-          }
-        }
-
-        // Refresh status to update eventCount safely
-        try {
-          const updatedStatus = await window.api.getCalendarStatus()
-          if (updatedStatus) {
-            setStatus((prev) => ({
-              ...prev,
-              mode: updatedStatus.mode,
-              eventCount: updatedStatus.eventCount || prev.eventCount
-            }))
-          }
-        } catch (statusErr) {
-          console.warn('Failed to refresh calendar status:', statusErr)
-        }
-
+  const handleSendCommand = useCallback(
+    async (text: string, options: SendOptions = {}): Promise<AgentExecutionResult | undefined> => {
+      const { speak = true, source = 'text' } = options
+      setMessages((prev) => [
+        ...prev,
+        { id: nextId('user'), sender: 'user', text, timestamp: formatCurrentTime() }
+      ])
+      setIsProcessing(true)
+      try {
+        const conversationId = conversationIdRef.current
+        const response = await window.api.executeCommand({
+          text,
+          source,
+          ...(conversationId ? { conversationId } : {})
+        })
+        handleAgentResult(response, speak)
         return response
-      } else {
-        const fallbackMsg: ChatMessage = {
-          id: `asst-${Date.now()}`,
-          sender: 'assistant',
-          text: 'Lỗi: window.api chưa được khởi tạo qua Preload.',
-          timestamp: formatCurrentTime()
-        }
-        setMessages((prev) => [...prev, fallbackMsg])
+      } catch (err) {
+        const { code, message } = parseIpcError(err)
+        addAssistantMessage(`Đã xảy ra lỗi khi gửi yêu cầu: ${message}`)
         return {
           success: false,
           intent: 'ERROR',
-          message: 'Lỗi: window.api chưa được khởi tạo qua Preload.'
+          language: 'vi',
+          message,
+          error: { code: code ?? 'CLIENT_ERROR' }
         }
+      } finally {
+        setIsProcessing(false)
       }
+    },
+    [addAssistantMessage, handleAgentResult]
+  )
+
+  const handleVoiceCommand = useCallback(
+    // useVoiceActivity speaks the answer itself: do not synthesize it twice.
+    (text: string) => handleSendCommand(text, { speak: false, source: 'voice' }),
+    [handleSendCommand]
+  )
+
+  const handlePendingAction = async (actionId: string, confirm: boolean): Promise<void> => {
+    setIsProcessing(true)
+    try {
+      const response = confirm
+        ? await window.api.confirmAction(actionId)
+        : await window.api.rejectAction(actionId)
+      handleAgentResult(response, true, actionId)
     } catch (err) {
-      const errMsg: ChatMessage = {
-        id: `asst-err-${Date.now()}`,
-        sender: 'assistant',
-        text: `Đã xảy ra lỗi khi gửi yêu cầu: ${err instanceof Error ? err.message : String(err)}`,
-        timestamp: formatCurrentTime()
-      }
-      setMessages((prev) => [...prev, errMsg])
-      return {
-        success: false,
-        intent: 'ERROR',
-        message: `Đã xảy ra lỗi khi gửi yêu cầu: ${err instanceof Error ? err.message : String(err)}`
-      }
+      addAssistantMessage(`Đã xảy ra lỗi: ${parseIpcError(err).message}`)
     } finally {
       setIsProcessing(false)
     }
   }
 
+  const signedIn = auth?.isAuthenticated === true
+
   return (
     <div className="app-container">
       <Header
-        authError={authError}
-        authState={authState}
-        eventCount={status.eventCount}
-        mode={status.mode}
-        onConnect={handleConnect}
-        onDisconnect={handleDisconnect}
-        timeZone={status.timeZone}
-        userEmail={userEmail}
+        auth={auth}
+        calendar={calendar}
+        signingIn={signingIn}
+        onSignInGoogle={() => void runSignIn(() => window.api.signInWithGoogle())}
+        onSignInDev={() => void runSignIn(() => window.api.signInDev())}
+        onCancelSignIn={() => void window.api.cancelSignIn()}
+        onSignOut={() => void handleSignOut()}
+        onDisconnectGoogle={() => void handleDisconnectGoogle()}
       />
 
-      <ChatFeed isProcessing={isProcessing} messages={messages} />
+      <ChatFeed
+        isProcessing={isProcessing}
+        messages={messages}
+        onConfirmAction={(id) => void handlePendingAction(id, true)}
+        onRejectAction={(id) => void handlePendingAction(id, false)}
+      />
 
-      <CommandSuggestions disabled={isProcessing} onSelectSuggestion={handleSendCommand} />
+      <CommandSuggestions
+        disabled={isProcessing || !signedIn}
+        onSelectSuggestion={(text) => void handleSendCommand(text)}
+      />
 
-      <MicrophoneControl onVoiceCommand={handleSendCommand} />
+      <MicrophoneControl disabled={!signedIn} onVoiceCommand={handleVoiceCommand} />
 
-      <CommandInput isProcessing={isProcessing} onSendCommand={handleSendCommand} />
+      <CommandInput
+        disabled={!signedIn}
+        isProcessing={isProcessing}
+        onSendCommand={(text) => void handleSendCommand(text)}
+      />
     </div>
   )
 }
